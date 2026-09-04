@@ -38,7 +38,8 @@ fn main() {
     let mut prev_lines = 0usize;
     let mut first = true;
     loop {
-        let s = snapshot::snapshot();
+        // spinner on first fetch only; auto-refreshes redraw frame itself
+        let s = snapshot::snapshot_with_spinner(first);
         let text = if args.plain {
             render::render_plain(&s, bar_width)
         } else {

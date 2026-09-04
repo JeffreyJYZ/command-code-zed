@@ -2,6 +2,11 @@ use crate::api;
 use crate::render::Snapshot;
 
 pub fn snapshot() -> Snapshot {
+    snapshot_with_spinner(true)
+}
+
+/// `spinner=false` silences the fetch animation (used for silent auto-refreshes).
+pub fn snapshot_with_spinner(spinner: bool) -> Snapshot {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -40,7 +45,9 @@ pub fn snapshot() -> Snapshot {
         }
     };
 
-    crate::spin::Spinner::global().start("fetching usage…");
+    if spinner {
+        crate::spin::Spinner::global().start("fetching usage…");
+    }
     match (|| -> Result<(), String> {
         s.sub = api::subscriptions(&key)?;
         s.credits = api::credits(&key)?;
@@ -50,6 +57,8 @@ pub fn snapshot() -> Snapshot {
         Ok(()) => {}
         Err(e) => s.err = Some(e),
     }
-    crate::spin::Spinner::global().stop();
+    if spinner {
+        crate::spin::Spinner::global().stop();
+    }
     s
 }
