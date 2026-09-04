@@ -3,7 +3,6 @@ mod cli;
 mod config;
 mod render;
 mod snapshot;
-mod spin;
 
 use std::io::Write;
 
@@ -41,25 +40,20 @@ fn main() {
 
     // live mode: true in-place redraw — cursor to first line of frame,
     // rewrite with per-line clear. First frame: print normally.
+    // Fetch spinner animates on the line below the frame, then vanishes.
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     let mut prev_lines = 0usize;
     let mut first = true;
-    let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    let mut tick = 0usize;
     loop {
-        // spinner on first fetch only; auto-refreshes redraw frame itself
         let s = snapshot::snapshot_with_spinner(first);
         let text = if args.plain {
             render::render_plain(&s, bar_width)
         } else {
             render::render(&s, bar_width)
         };
-        tick += 1;
         let status_line = format!(
-            "{DIM}refreshing every {interval}s · updated {} {}· ctrl-c to quit{RESET}",
-            timestamp(),
-            frames[tick % frames.len()],
+            "{DIM}refreshing every {interval}s · ctrl-c to quit{RESET}"
         );
         let frame = format!("{text}{status_line}\n");
         if !first {
@@ -73,13 +67,14 @@ fn main() {
         out.flush().ok();
         prev_lines = frame.lines().count();
         first = false;
-        std::thread::sleep(std::time::Duration::from_secs(interval));
+        // countdown: rewrite just the status line each second
+        for remaining in (1..interval).rev() {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            write!(
+                out,
+                "\r\x1b[2K{DIM}refreshing every {interval}s · next refresh in {remaining}s · ctrl-c to quit{RESET}"
+            ).ok();
+            out.flush().ok();
+        }
     }
-}
-
-fn timestamp() -> String {
-    let d = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    format!("{}s", d.as_secs() % 86400) // rough time-of-day in secs; good enough as tick marker
 }
