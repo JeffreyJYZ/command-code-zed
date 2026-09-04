@@ -167,12 +167,26 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
     }
     o.push('\n');
 
-    o.push_str(&format!(
-        "{BOLD}Credits{RESET} {} monthly · {} purchased · {} free\n",
-        money(s.credits.credits.monthly_credits),
-        money(s.credits.credits.purchased_credits),
-        money(s.credits.credits.free_credits),
-    ));
+    let monthly_cap = plan_monthly_cap(&s.sub.plan_id);
+    match monthly_cap {
+        Some(cap) => {
+            o.push_str(&format!(
+                "{BOLD}Credits{RESET} {} / {} monthly · {} purchased · {} free\n",
+                money(s.credits.credits.monthly_credits),
+                money(cap),
+                money(s.credits.credits.purchased_credits),
+                money(s.credits.credits.free_credits),
+            ));
+        }
+        None => {
+            o.push_str(&format!(
+                "{BOLD}Credits{RESET} {} monthly · {} purchased · {} free\n",
+                money(s.credits.credits.monthly_credits),
+                money(s.credits.credits.purchased_credits),
+                money(s.credits.credits.free_credits),
+            ));
+        }
+    }
 
     if let Some(e) = &s.err {
         o.push_str(&format!("\n{RED}error:{RESET} {e}\n"));
@@ -181,7 +195,7 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
     o.push_str(&format!("\n{BOLD}Usage windows{RESET}\n"));
     // Monthly: cap from plan table, used = cap - remaining monthly credits.
     // ponytail: reset_at parsed from ISO date has no UTC offset; treated as UTC — off by hours at most.
-    if let Some(cap) = plan_monthly_cap(&s.sub.plan_id) {
+    if let Some(cap) = monthly_cap {
         let used = (cap - s.credits.credits.monthly_credits).clamp(0.0, cap);
         let reset_at = s.sub.current_period_end.as_ref().and_then(|e| parse_iso_utc(e));
         o.push_str(&window_line("Monthly", &crate::api::Window {
@@ -191,11 +205,6 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
             reset_at,
         }, s.now, bar_width));
         o.push('\n');
-        o.push_str(&format!(
-            " {DIM}Original quota {} · remaining {}{RESET}\n",
-            money(cap),
-            money(s.credits.credits.monthly_credits),
-        ));
     }
     match (&s.credits.window_limits.five_hour, &s.credits.window_limits.weekly) {
         (Some(h5), Some(wk)) => {
