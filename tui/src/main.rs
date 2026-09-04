@@ -38,8 +38,26 @@ fn main() {
     // offline local reports — no API, no key needed
     match args.subcmd {
         Some(cli::SubCmd::Daily) => {
-            let d = reports::load_local();
-            print!("{}", report_render::table(&d.by_day, &d.total, args.last, args.json));
+            // account-wide (all harnesses) via API when key available; local fallback
+            let data_source = if args.local {
+                None
+            } else {
+                api::api_key().ok().map(|k| reports::load_account_daily(args.last.unwrap_or(7), &k))
+            };
+            match data_source {
+                Some(Ok(by_day)) => {
+                    let total = reports::sum_days(&by_day);
+                    print!("{}", report_render::account_table(&by_day, &total, args.json));
+                }
+                Some(Err(e)) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
+                None => {
+                    let d = reports::load_local();
+                    print!("{}", report_render::table(&d.by_day, &d.total, args.last, args.json));
+                }
+            }
             return;
         }
         Some(cli::SubCmd::Model) => {

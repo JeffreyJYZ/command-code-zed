@@ -9,6 +9,7 @@ pub struct Args {
     pub subcmd: Option<SubCmd>,
     pub last: Option<usize>,
     pub json: bool,
+    pub local: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -30,6 +31,7 @@ pub fn parse_args() -> Args {
         subcmd: None,
         last: None,
         json: false,
+        local: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -37,7 +39,8 @@ pub fn parse_args() -> Args {
             "-1" | "--once" => a.once = true,
             "-p" | "--plain" => a.plain = true,
             "-h" | "--help" | "help" => a.help = true,
-            "--json" | "json" if arg == "--json" => a.json = true,
+            "--json" => a.json = true,
+            "--local" => a.local = true,
             "-i" | "--interval" => {
                 a.interval = it.next().and_then(|v| v.parse().ok());
             }
@@ -131,6 +134,7 @@ Options:
   -w, --bar-width <n>   Progress bar width in chars (default: config or 20)
       --last <n>        Show only the last N days (daily)
       --json            Machine-readable JSON output
+      --local           daily: use local CLI logs only (skip account API)
   -h, --help            This help
 
 Config: ~/.config/cmd-usage/config.json

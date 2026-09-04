@@ -40,6 +40,48 @@ fn bar(pct: f64, width: usize) -> String {
     )
 }
 
+/// Account-wide daily table (all harnesses, from usage API)
+pub fn account_table(by_day: &crate::reports::ByDay, total: &crate::reports::Totals, json: bool) -> String {
+    if json {
+        let days: Vec<String> = by_day
+            .iter()
+            .map(|(d, t)| format!("\"{}\":{}", d, total_json(t)))
+            .collect();
+        return format!(
+            "{{\"scope\":\"account\",\"total\":{},{}}}",
+            total_json(total),
+            format_args!("\"days\":{{{}}}", days.join(","))
+        );
+    }
+    let mut o = String::new();
+    o.push_str(&format!(
+        "{BOLD}Account usage{RESET} {DIM}(all harnesses, last recorded days){RESET}\n\n"
+    ));
+    o.push_str(&format!(
+        " {BOLD}{:<12}{RESET} {:>6} {:>10} {:>10} {:>10}\n",
+        "Day", "Reqs", "In", "Out", "Cost"
+    ));
+    for (day, t) in by_day {
+        o.push_str(&format!(
+            " {:<12} {:>6} {:>10} {:>10} {:>10}\n",
+            day,
+            compact(t.requests),
+            compact(t.usage.input_tokens),
+            compact(t.usage.output_tokens),
+            money(t.usage.cost_usd),
+        ));
+    }
+    o.push_str(&format!(
+        " {DIM}{:<12}{RESET} {:>6} {:>10} {:>10} {:>10}\n",
+        "total",
+        compact(total.requests),
+        compact(total.usage.input_tokens),
+        compact(total.usage.output_tokens),
+        money(total.usage.cost_usd),
+    ));
+    o
+}
+
 pub fn table(by_day: &ByDay, total: &Totals, days: Option<usize>, json: bool) -> String {
     let mut o = String::new();
     if json {

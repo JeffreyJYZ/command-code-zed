@@ -1,7 +1,6 @@
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
-
 #[derive(Deserialize)]
 struct Line {
     #[serde(rename = "type")]
@@ -144,4 +143,174 @@ pub fn load_local() -> LocalData {
         }
     }
     data
+}
+
+// ---- Account-wide daily usage (API, all harnesses) ----
+// The account API key can be used from any harness (CLI, other agents via
+// Provider API). Only the server knows the full picture; local JSONL misses
+// non-CLI usage. alpha/usage/summary?since=<ISO> returns cumulative totals
+// from that instant to now. Per-day usage = cum(day start) - cum(next day
+// start).
+
+#[derive(Deserialize)]
+struct ApiSummary {
+    #[serde(default, rename = "totalCount")]
+    total_count: u64,
+    #[serde(default, rename = "totalCost")]
+    total_cost: f64,
+    #[serde(default, rename = "totalTokensIn")]
+    total_tokens_in: u64,
+    #[serde(default, rename = "totalTokensOut")]
+    total_tokens_out: u64,
+}
+
+fn iso_day_start(day: &str) -> String {
+    format!("{day}T00:00:00.000Z")
+}
+
+fn fetch_cumulative(since: &str, key: &str) -> Result<ApiSummary, String> {
+    let resp = ureq::get(&format!(
+        "https://api.commandcode.ai/alpha/usage/summary?since={since}"
+    ))
+    .set("Authorization", &format!("Bearer {key}"))
+    .timeout(std::time::Duration::from_secs(15))
+    .call()
+    .map_err(|e| format!("summary since={since}: {e}"))?;
+    let mut buf = Vec::new();
+    use std::io::Read;
+    resp.into_reader()
+        .take(1 << 20)
+        .read_to_end(&mut buf)
+        .map_err(|e| e.to_string())?;
+    serde_json::from_slice(&buf).map_err(|e| format!("summary parse: {e}"))
+}
+
+/// today as UTC YYYY-MM-DD (no chrono; days-since-epoch → civil date)
+pub fn today_utc() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let days = secs / 86400;
+    // Howard Hinnant civil_from_days
+    let z = days as i64 + 719_468;
+    let era = z / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// shift YYYY-MM-DD by n days (UTC)
+pub fn day_shift(day: &str, n: i64) -> Option<String> {
+    let mut p = day.split('-');
+    let y: i64 = p.next()?.parse().ok()?;
+    let m: i64 = p.next()?.parse().ok()?;
+    let d: i64 = p.next()?.parse().ok()?;
+    let y2 = if m <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468 + n;
+    // back to civil
+    let z = days + 719_468;
+    let era = z / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    Some(format!("{y:04}-{m:02}-{d:02}"))
+}
+
+/// Account-wide per-day usage for the last `days` days (today included),
+/// fetched in parallel from the usage API. Includes usage from every
+/// harness that used the account key.
+pub fn load_account_daily(days: usize, key: &str) -> Result<ByDay, String> {
+    let today = today_utc();
+    // day boundaries needed: start of each day + start of "tomorrow" (=now, cum 0 conceptually;
+    // actually today's usage = cum(today start))
+    let days = days.max(1);
+    let starts: Vec<String> = (0..days)
+        .filter_map(|i| day_shift(&today, -(i as i64)))
+        .collect();
+
+    let handles: Vec<_> = starts
+        .iter()
+        .map(|d| {
+            let s = iso_day_start(d);
+            let k = key.to_string();
+            let dd = d.clone();
+            std::thread::spawn(move || (dd, fetch_cumulative(&s, &k)))
+        })
+        .collect();
+
+    // collect in chronological order (oldest first)
+    let mut cums: Vec<(String, ApiSummary)> = Vec::new();
+    for h in handles {
+        let (d, r) = h.join().map_err(|_| "usage thread panicked".to_string())?;
+        cums.push((d, r?));
+    }
+    // sort oldest → newest
+    cums.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut out = ByDay::new();
+    for (i, (day, cum)) in cums.iter().enumerate() {
+        // per-day = cum(day start) - cum(next day start); for today subtract 0
+        let (reqs, cost, tin, tout) = if i + 1 < cums.len() {
+            let next = &cums[i + 1].1;
+            (
+                cum.total_count.saturating_sub(next.total_count),
+                (cum.total_cost - next.total_cost).max(0.0),
+                cum.total_tokens_in.saturating_sub(next.total_tokens_in),
+                cum.total_tokens_out.saturating_sub(next.total_tokens_out),
+            )
+        } else {
+            (
+                cum.total_count,
+                cum.total_cost,
+                cum.total_tokens_in,
+                cum.total_tokens_out,
+            )
+        };
+        if reqs == 0 && cost == 0.0 {
+            continue;
+        }
+        out.insert(
+            day.clone(),
+            Totals {
+                requests: reqs,
+                usage: Usage {
+                    input_tokens: tin,
+                    output_tokens: tout,
+                    cost_usd: cost,
+                    ..Default::default()
+                },
+            },
+        );
+    }
+    Ok(out)
+}
+
+pub fn sum_days(by_day: &ByDay) -> Totals {
+    let mut t = Totals::default();
+    for v in by_day.values() {
+        t.requests += v.requests;
+        t.usage.input_tokens += v.usage.input_tokens;
+        t.usage.output_tokens += v.usage.output_tokens;
+        t.usage.cache_read_tokens += v.usage.cache_read_tokens;
+        t.usage.cache_write_tokens += v.usage.cache_write_tokens;
+        t.usage.cost_usd += v.usage.cost_usd;
+    }
+    t
 }
