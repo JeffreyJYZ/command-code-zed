@@ -1,6 +1,6 @@
 [package]
 name = "cmd-usage"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 description = "Live Command Code (commandcode.ai) usage dashboard: credits, 5-hour and weekly windows, plan limits. Watch mode or one-shot."
 license = "MIT"
