@@ -6,11 +6,20 @@ use std::path::PathBuf;
 pub struct Config {
     pub interval_secs: u64,
     pub bar_width: usize,
+    pub statusline_template: String,
+    pub statusline_colors: bool,
+    pub statusline_ascii: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Config { interval_secs: 5, bar_width: 20 }
+        Config {
+            interval_secs: 5,
+            bar_width: 20,
+            statusline_template: "{plan} {credits}/{cap} \u{b7} 5h {5h_bar} \u{b7} wk {wk_bar}".into(),
+            statusline_colors: true,
+            statusline_ascii: false,
+        }
     }
 }
 
@@ -38,8 +47,19 @@ pub fn load() -> Config {
 }
 
 /// Persist any subset of settings; missing keys keep current values.
-pub fn set(interval_secs: Option<u64>, bar_width: Option<usize>) -> Result<(), String> {
-    if interval_secs.is_none() && bar_width.is_none() {
+pub fn set(
+    interval_secs: Option<u64>,
+    bar_width: Option<usize>,
+    sl_template: Option<String>,
+    sl_colors: Option<bool>,
+    sl_ascii: Option<bool>,
+) -> Result<(), String> {
+    if interval_secs.is_none()
+        && bar_width.is_none()
+        && sl_template.is_none()
+        && sl_colors.is_none()
+        && sl_ascii.is_none()
+    {
         return Err("nothing to set".into());
     }
     if let Some(v) = interval_secs {
@@ -57,6 +77,9 @@ pub fn set(interval_secs: Option<u64>, bar_width: Option<usize>) -> Result<(), S
     let cfg = Config {
         interval_secs: interval_secs.unwrap_or(cur.interval_secs),
         bar_width: bar_width.unwrap_or(cur.bar_width),
+        statusline_template: sl_template.unwrap_or_else(|| cur.statusline_template.clone()),
+        statusline_colors: sl_colors.unwrap_or(cur.statusline_colors),
+        statusline_ascii: sl_ascii.unwrap_or(cur.statusline_ascii),
     };
     let json = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
 
@@ -66,7 +89,10 @@ pub fn set(interval_secs: Option<u64>, bar_width: Option<usize>) -> Result<(), S
     }
     std::fs::write(&path, json + "\n").map_err(|e| e.to_string())?;
     println!("saved {}", path.display());
-    println!("  interval_secs = {}", cfg.interval_secs);
-    println!("  bar_width     = {}", cfg.bar_width);
+    println!("  interval_secs       = {}", cfg.interval_secs);
+    println!("  bar_width           = {}", cfg.bar_width);
+    println!("  statusline_template = {}", cfg.statusline_template);
+    println!("  statusline_colors   = {}", cfg.statusline_colors);
+    println!("  statusline_ascii    = {}", cfg.statusline_ascii);
     Ok(())
 }

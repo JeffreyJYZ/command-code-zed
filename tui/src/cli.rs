@@ -5,16 +5,27 @@ pub struct Args {
     pub plain: bool,
     pub bar_width: Option<usize>,
     pub help: bool,
-    pub config_set: Option<(Option<u64>, Option<usize>)>,
+    pub config_set: Option<ConfigSet>,
     pub subcmd: Option<SubCmd>,
     pub last: Option<usize>,
+    pub hours: Option<usize>,
     pub json: bool,
     pub local: bool,
+}
+
+#[derive(Debug, Default)]
+pub struct ConfigSet {
+    pub interval: Option<u64>,
+    pub width: Option<usize>,
+    pub sl_template: Option<String>,
+    pub sl_colors: Option<bool>,
+    pub sl_ascii: Option<bool>,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum SubCmd {
     Daily,
+    Hours,
     Model,
     Session,
     Statusline,
@@ -30,6 +41,7 @@ pub fn parse_args() -> Args {
         config_set: None,
         subcmd: None,
         last: None,
+        hours: None,
         json: false,
         local: false,
     };
@@ -47,14 +59,22 @@ pub fn parse_args() -> Args {
             "-w" | "--bar-width" => {
                 a.bar_width = it.next().and_then(|v| v.parse().ok());
             }
-            "--last" | "-l" => match it.next().and_then(|v| v.parse().ok()) {
+            "--days" | "--last" | "-l" => match it.next().and_then(|v| v.parse().ok()) {
                 Some(n) => a.last = Some(n),
                 None => {
-                    eprintln!("--last needs a number (e.g. --last 7)");
+                    eprintln!("--days needs a number (e.g. --days 7)");
                     std::process::exit(2);
                 }
             },
-            "daily" => a.subcmd = Some(SubCmd::Daily),
+            "--hours" => match it.next().and_then(|v| v.parse::<usize>().ok()) {
+                Some(n) => a.hours = Some(n.clamp(1, 168)),
+                None => {
+                    eprintln!("--hours needs a number (e.g. --hours 6, max 168)");
+                    std::process::exit(2);
+                }
+            },
+            "daily" | "days" => a.subcmd = Some(SubCmd::Daily),
+            "hourly" | "hours" => a.subcmd = Some(SubCmd::Hours),
             "model" => a.subcmd = Some(SubCmd::Model),
             "session" | "sessions" | "project" => a.subcmd = Some(SubCmd::Session),
             "statusline" => a.subcmd = Some(SubCmd::Statusline),
@@ -62,8 +82,7 @@ pub fn parse_args() -> Args {
                 // config set [interval=<s>] [width=<n>]
                 if let Some(sub) = it.next() {
                     if sub == "set" {
-                        let mut interval = None;
-                        let mut width = None;
+                        let mut cs = ConfigSet::default();
                         for kv in it.by_ref() {
                             let (k, v) = match kv.split_once('=') {
                                 Some(kv) => kv,
@@ -74,26 +93,41 @@ pub fn parse_args() -> Args {
                             };
                             match k {
                                 "interval" => match v.parse() {
-                                    Ok(n) => interval = Some(n),
+                                    Ok(n) => cs.interval = Some(n),
                                     Err(_) => {
                                         eprintln!("config: interval must be a number, got '{v}'");
                                         std::process::exit(2);
                                     }
                                 },
                                 "width" => match v.parse() {
-                                    Ok(n) => width = Some(n),
+                                    Ok(n) => cs.width = Some(n),
                                     Err(_) => {
                                         eprintln!("config: width must be a number, got '{v}'");
                                         std::process::exit(2);
                                     }
                                 },
+                                "sl" | "statusline" => cs.sl_template = Some(v.to_string()),
+                                "sl_colors" => match v.parse() {
+                                    Ok(b) => cs.sl_colors = Some(b),
+                                    Err(_) => {
+                                        eprintln!("config: sl_colors must be true/false, got '{v}'");
+                                        std::process::exit(2);
+                                    }
+                                },
+                                "sl_ascii" => match v.parse() {
+                                    Ok(b) => cs.sl_ascii = Some(b),
+                                    Err(_) => {
+                                        eprintln!("config: sl_ascii must be true/false, got '{v}'");
+                                        std::process::exit(2);
+                                    }
+                                },
                                 other => {
-                                    eprintln!("config: unknown key '{other}' (keys: interval, width)");
+                                    eprintln!("config: unknown key '{other}' (keys: interval, width, sl, sl_colors, sl_ascii)");
                                     std::process::exit(2);
                                 }
                             }
                         }
-                        a.config_set = Some((interval, width));
+                        a.config_set = Some(cs);
                     } else {
                         eprintln!("config: unknown subcommand '{sub}' (try: config set interval=10)");
                         std::process::exit(2);
@@ -121,7 +155,8 @@ pub fn usage_text() -> &'static str {
 
 Usage: cmduse [options]           Live plan dashboard (watch mode)
        cmduse -1                  One-shot dashboard
-       cmduse daily [--last N] [--json]    Local usage by day (offline)
+       cmduse daily [--days N] [--json]    Account usage by day (all harnesses)
+       cmduse hourly [--hours N] [--json]  Account usage by hour (all harnesses)
        cmduse model [--json]      Local usage by model
        cmduse session [--json]    Local usage by project/session
        cmduse statusline          Compact one-liner for prompts/tmux
@@ -132,7 +167,8 @@ Options:
   -p, --plain           No colors / no live redraw (for scripts, pipes)
   -i, --interval <s>    Refresh interval in seconds (default: config or 5)
   -w, --bar-width <n>   Progress bar width in chars (default: config or 20)
-      --last <n>        Show only the last N days (daily)
+      --days <n>        daily: number of days back (default 7)
+      --hours <n>       hourly: number of hours back (default 24, max 168)
       --json            Machine-readable JSON output
       --local           daily: use local CLI logs only (skip account API)
   -h, --help            This help

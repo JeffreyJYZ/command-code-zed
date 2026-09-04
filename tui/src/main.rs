@@ -27,8 +27,8 @@ fn main() {
         return;
     }
 
-    if let Some((interval, width)) = args.config_set {
-        if let Err(e) = config::set(interval, width) {
+    if let Some(cs) = args.config_set {
+        if let Err(e) = config::set(cs.interval, cs.width, cs.sl_template, cs.sl_colors, cs.sl_ascii) {
             eprintln!("error: {e}");
             std::process::exit(1);
         }
@@ -56,6 +56,23 @@ fn main() {
                 None => {
                     let d = reports::load_local();
                     print!("{}", report_render::table(&d.by_day, &d.total, args.last, args.json));
+                }
+            }
+            return;
+        }
+        Some(cli::SubCmd::Hours) => {
+            let key = match api::api_key() {
+                Ok(k) => k,
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
+            };
+            match reports::load_account_hourly(args.hours.unwrap_or(24), &key) {
+                Ok(rows) => print!("{}", report_render::hourly_table(&rows, args.json)),
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
                 }
             }
             return;
@@ -141,7 +158,7 @@ fn main() {
 }
 
 fn statusline_cmd(args: &cli::Args) {
-    let _cfg = config::load();
+    let cfg = config::load();
     let s = snapshot::snapshot_with_spinner(true);
     let plan = render::plan_name(&s.sub.plan_id);
     let cap = render::plan_monthly_cap(&s.sub.plan_id).unwrap_or(0.0);
@@ -173,5 +190,15 @@ fn statusline_cmd(args: &cli::Args) {
         .weekly
         .as_ref()
         .map(|w| (w.used, w.cap));
-    print!("{}", report_render::statusline(plan, s.credits.credits.monthly_credits, cap, h5, wk));
+    let d = report_render::StatusData {
+        plan,
+        monthly_remaining: s.credits.credits.monthly_credits,
+        monthly_cap: cap,
+        five_hour: &h5,
+        weekly: &wk,
+        bar_width: cfg.bar_width.min(30),
+        colors: cfg.statusline_colors,
+        ascii: cfg.statusline_ascii,
+    };
+    print!("{}", report_render::render_statusline(&cfg.statusline_template, &d));
 }

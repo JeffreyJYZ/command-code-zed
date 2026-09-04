@@ -243,3 +243,87 @@ fn snapshot_fixture() -> Snapshot {
         err: None,
     }
 }
+
+#[test]
+fn statusline_templates() {
+    use crate::report_render::{render_statusline, StatusData};
+    let h5 = Some((2.79, 14.0));
+    let wk = Some((3.61, 35.0));
+    let d = |tpl_colors: bool, ascii: bool| StatusData {
+        plan: "GOAT",
+        monthly_remaining: 59.3,
+        monthly_cap: 70.0,
+        five_hour: &h5,
+        weekly: &wk,
+        bar_width: 10,
+        colors: tpl_colors,
+        ascii,
+    };
+
+    // full template
+    let d0 = d(true, false);
+    let out = render_statusline("{plan} {credits}/{cap} · 5h {5h_bar} · wk {wk_bar}", &d0);
+    let plain = crate::report_render::strip_ansi(&out);
+    assert!(plain.contains("GOAT"));
+    assert!(plain.contains("$59.30/$70.00"));
+    assert!(plain.contains("5h"));
+    assert!(plain.contains("wk"));
+
+    // minimal: plan only
+    let out = render_statusline("{plan}", &d0);
+    assert_eq!(out, "GOAT");
+
+    // pct placeholders
+    let out = render_statusline("{5h_pct}|{wk_pct}", &d0);
+    let plain = crate::report_render::strip_ansi(&out);
+    assert_eq!(plain, "20%|10%");
+
+    // used/cap
+    let out = render_statusline("{5h_used} of {5h_cap}", &d0);
+    assert_eq!(crate::report_render::strip_ansi(&out), "$2.79 of $14.00");
+
+    // credits_bar shows used % of monthly cap
+    let out = render_statusline("{credits_bar}", &d0);
+    assert!(out.contains("15.3%"));
+
+    // unknown placeholders dropped
+    let out = render_statusline("{plan} {bogus} end", &d0);
+    assert_eq!(crate::report_render::strip_ansi(&out), "GOAT  end");
+
+    // unclosed brace passes through verbatim
+    let out = render_statusline("{plan} {oops", &d0);
+    assert_eq!(crate::report_render::strip_ansi(&out), "GOAT {oops");
+
+    // ascii bars
+    let d1 = d(false, true);
+    let out = render_statusline("{5h_bar}", &d1);
+    assert!(out.contains('#'));
+    assert!(out.contains('-'));
+    assert!(!out.contains('━'));
+
+    // colors stripped when colors=false
+    let d2 = d(false, false);
+    let out = render_statusline("{credits}", &d2);
+    assert!(!out.contains('\x1b'));
+    assert_eq!(out, "$59.30");
+
+    // multi-line templates allowed
+    let out = render_statusline("{plan}\n{credits_bar}", &d0);
+    assert!(out.contains('\n'));
+
+    // zero-cap plan: bars show 0%, no divide-by-zero
+    let h5z: Option<(f64, f64)> = None;
+    let dz = StatusData {
+        plan: "Free",
+        monthly_remaining: 0.0,
+        monthly_cap: 0.0,
+        five_hour: &h5z,
+        weekly: &h5z,
+        bar_width: 10,
+        colors: true,
+        ascii: false,
+    };
+    let out = render_statusline("{plan} {5h_pct} {wk_pct} {credits_bar}", &dz);
+    let plain = crate::report_render::strip_ansi(&out);
+    assert!(plain.contains("0%"));
+}

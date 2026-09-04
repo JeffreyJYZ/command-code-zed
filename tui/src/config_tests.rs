@@ -45,23 +45,23 @@ fn config_set_validates_and_persists() {
     std::env::set_var("XDG_CONFIG_HOME", &dir);
 
     // valid set
-    set(Some(15), Some(30)).unwrap();
+    set(Some(15), Some(30), None, None, None).unwrap();
     let c: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(c.interval_secs, 15);
     assert_eq!(c.bar_width, 30);
 
     // partial set keeps other key
-    set(Some(60), None).unwrap();
+    set(Some(60), None, None, None, None).unwrap();
     let c: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(c.interval_secs, 60);
     assert_eq!(c.bar_width, 30);
 
     // validation errors
-    assert!(set(Some(0), None).is_err());
-    assert!(set(Some(86_401), None).is_err());
-    assert!(set(None, Some(4)).is_err()); // < 5
-    assert!(set(None, Some(201)).is_err()); // > 200
-    assert!(set(None, None).is_err()); // nothing to set
+    assert!(set(Some(0), None, None, None, None).is_err());
+    assert!(set(Some(86_401), None, None, None, None).is_err());
+    assert!(set(None, Some(4), None, None, None).is_err()); // < 5
+    assert!(set(None, Some(201), None, None, None).is_err()); // > 200
+    assert!(set(None, None, None, None, None).is_err()); // nothing to set
 
     // file unchanged after failed set
     let c: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
