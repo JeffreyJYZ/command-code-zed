@@ -17,6 +17,14 @@ fn main() {
         return;
     }
 
+    if let Some((interval, width)) = args.config_set {
+        if let Err(e) = config::set(interval, width) {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     let cfg = config::load();
     let interval = args.interval.or(Some(cfg.interval_secs)).unwrap_or(5).max(1);
     let bar_width = args.bar_width.or(Some(cfg.bar_width)).unwrap_or(20).max(5);
