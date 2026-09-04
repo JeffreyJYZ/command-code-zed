@@ -21,6 +21,26 @@ pub fn plan_name(plan_id: &str) -> &str {
     }
 }
 
+/// Monthly credit allocation per plan (docs: pricing-limits).
+pub fn plan_monthly_cap(plan_id: &str) -> Option<f64> {
+    let id = plan_id.to_lowercase();
+    if id.contains("enterprise") || id.contains("provider") {
+        None
+    } else if id.contains("team") {
+        Some(40.0)
+    } else if id.contains("max") {
+        if id.contains("20") { Some(300.0) } else { Some(150.0) }
+    } else if id.contains("goat") {
+        Some(70.0)
+    } else if id.contains("pro") {
+        Some(80.0)
+    } else if id.contains("go") {
+        Some(10.0)
+    } else {
+        None
+    }
+}
+
 const RESET: &str = "\x1b[0m";
 const DIM: &str = "\x1b[2m";
 const BOLD: &str = "\x1b[1m";
@@ -88,6 +108,30 @@ fn rel_time(reset_at: Option<f64>, now: u64) -> String {
     }
 }
 
+/// Parse "2026-09-27T12:23:00.000Z" → epoch ms.
+fn parse_iso_utc(s: &str) -> Option<f64> {
+    let (date, rest) = s.split_once('T')?;
+    let rest = rest.trim_end_matches('Z');
+    let mut dp = date.split('-');
+    let y: i64 = dp.next()?.parse().ok()?;
+    let mo: i64 = dp.next()?.parse().ok()?;
+    let d: i64 = dp.next()?.parse().ok()?;
+    // days since epoch via civil-from-days algorithm (Howard Hinnant)
+    let y = if mo <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (mo + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    let secs = days * 86400;
+    let mut hp = rest.split(':');
+    let h: i64 = hp.next().unwrap_or("0").parse().ok()?;
+    let mi: i64 = hp.next().unwrap_or("0").parse().ok()?;
+    let sec: f64 = hp.next().unwrap_or("0").parse().ok()?;
+    Some((secs + h * 3600 + mi * 60) as f64 * 1000.0 + sec * 1000.0)
+}
+
 fn window_line(label: &str, w: &crate::api::Window, now: u64, bar_width: usize) -> String {
     let flag = if w.exceeded { format!(" {RED}{BOLD}LIMIT EXCEEDED{RESET}") } else { String::new() };
     format!(
@@ -134,7 +178,25 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
         o.push_str(&format!("\n{RED}error:{RESET} {e}\n"));
     }
 
-    o.push_str(&format!("\n{BOLD}Rolling windows{RESET}\n"));
+    o.push_str(&format!("\n{BOLD}Usage windows{RESET}\n"));
+    // Monthly: cap from plan table, used = cap - remaining monthly credits.
+    // ponytail: reset_at parsed from ISO date has no UTC offset; treated as UTC — off by hours at most.
+    if let Some(cap) = plan_monthly_cap(&s.sub.plan_id) {
+        let used = (cap - s.credits.credits.monthly_credits).clamp(0.0, cap);
+        let reset_at = s.sub.current_period_end.as_ref().and_then(|e| parse_iso_utc(e));
+        o.push_str(&window_line("Monthly", &crate::api::Window {
+            used,
+            cap,
+            exceeded: false,
+            reset_at,
+        }, s.now, bar_width));
+        o.push('\n');
+        o.push_str(&format!(
+            " {DIM}Original quota {} · remaining {}{RESET}\n",
+            money(cap),
+            money(s.credits.credits.monthly_credits),
+        ));
+    }
     match (&s.credits.window_limits.five_hour, &s.credits.window_limits.weekly) {
         (Some(h5), Some(wk)) => {
             o.push_str(&window_line("5-hour", h5, s.now, bar_width));
