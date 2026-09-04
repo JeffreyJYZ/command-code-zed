@@ -1,0 +1,24 @@
+[package]
+name = "cmd-usage"
+version = "0.1.0"
+edition = "2021"
+description = "Live Command Code (commandcode.ai) usage dashboard: credits, 5-hour and weekly windows, plan limits. Watch mode or one-shot."
+license = "MIT"
+repository = "https://github.com/JeffreyJYZ/command-code-zed"
+keywords = ["cli", "dashboard", "usage", "command-code", "tui"]
+categories = ["command-line-utilities"]
+readme = "README.md"
+
+[[bin]]
+name = "cmduse"
+path = "src/main.rs"
+
+[dependencies]
+ureq = { version = "2", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

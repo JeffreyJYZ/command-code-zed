@@ -1,0 +1,7 @@
+id = "command-code-usage"
+name = "Command Code Usage"
+version = "0.1.0"
+schema_version = 1
+authors = ["Jeffrey JYZ"]
+description = "Live Command Code plan & usage dashboard: credits, 5-hour and weekly windows, per-plan limits (Go, GOAT, Pro, Max 10x/20x)."
+repository = "https://github.com/JeffreyJYZ/command-code-zed"
