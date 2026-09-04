@@ -37,6 +37,8 @@ fn main() {
     let mut out = stdout.lock();
     let mut prev_lines = 0usize;
     let mut first = true;
+    let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let mut tick = 0usize;
     loop {
         // spinner on first fetch only; auto-refreshes redraw frame itself
         let s = snapshot::snapshot_with_spinner(first);
@@ -45,9 +47,11 @@ fn main() {
         } else {
             render::render(&s, bar_width)
         };
+        tick += 1;
         let status_line = format!(
-            "{DIM}refreshing every {interval}s · updated {} · ctrl-c to quit{RESET}",
-            timestamp()
+            "{DIM}refreshing every {interval}s · updated {} {}· ctrl-c to quit{RESET}",
+            timestamp(),
+            frames[tick % frames.len()],
         );
         let frame = format!("{text}{status_line}\n");
         if !first {
