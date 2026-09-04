@@ -85,7 +85,7 @@ fn fetch(_show_spinner: bool) -> Snapshot {
 
     stop.store(true, std::sync::atomic::Ordering::Relaxed);
     let _ = writer.join();
-    if let Some(mut f) = std::fs::OpenOptions::new().write(true).open("/dev/tty").ok() {
+    if let Ok(mut f) = std::fs::OpenOptions::new().write(true).open("/dev/tty") {
         // erase spinner line; main redraws status line right after
         write!(f, "\r\x1b[2K").ok();
         f.flush().ok();

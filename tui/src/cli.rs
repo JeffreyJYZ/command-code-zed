@@ -34,7 +34,7 @@ pub fn parse_args() -> Args {
                     if sub == "set" {
                         let mut interval = None;
                         let mut width = None;
-                        while let Some(kv) = it.next() {
+                        for kv in it.by_ref() {
                             let (k, v) = match kv.split_once('=') {
                                 Some(kv) => kv,
                                 None => {
@@ -83,8 +83,11 @@ pub fn parse_args() -> Args {
 }
 
 pub fn usage() {
-    println!(
-        "cmduse — Command Code usage dashboard
+    println!("{}", usage_text());
+}
+
+pub fn usage_text() -> &'static str {
+    "cmduse — Command Code usage dashboard
 
 Usage: cmduse [options]
 
@@ -96,11 +99,10 @@ Options:
   -h, --help            This help
 
 Config: ~/.config/cmd-usage/config.json
-  {{ \"interval_secs\": 5, \"bar_width\": 20 }}
+  { \"interval_secs\": 5, \"bar_width\": 20 }
 
   cmduse config set interval=<s> width=<n>   Save config options
   cmduse config set interval=10              Change just one
 
 Requires: logged-in Command Code CLI (~/.commandcode/auth.json)"
-    );
 }

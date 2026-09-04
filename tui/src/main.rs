@@ -4,6 +4,15 @@ mod config;
 mod render;
 mod snapshot;
 
+#[cfg(test)]
+mod cli_tests;
+
+#[cfg(test)]
+mod config_tests;
+
+#[cfg(test)]
+mod render_tests;
+
 use std::io::Write;
 
 const RESET: &str = "\x1b[0m";
@@ -25,7 +34,11 @@ fn main() {
     }
 
     let cfg = config::load();
-    let interval = args.interval.or(Some(cfg.interval_secs)).unwrap_or(5).max(1);
+    let interval = args
+        .interval
+        .or(Some(cfg.interval_secs))
+        .unwrap_or(5)
+        .clamp(1, 86_400);
     let bar_width = args.bar_width.or(Some(cfg.bar_width)).unwrap_or(20).max(5);
 
     if args.once {

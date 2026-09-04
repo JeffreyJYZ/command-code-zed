@@ -43,8 +43,8 @@ pub fn set(interval_secs: Option<u64>, bar_width: Option<usize>) -> Result<(), S
         return Err("nothing to set".into());
     }
     if let Some(v) = interval_secs {
-        if v == 0 {
-            return Err("interval must be ≥ 1 second".into());
+        if v == 0 || v > 86_400 {
+            return Err("interval must be 1–86400 seconds".into());
         }
     }
     if let Some(v) = bar_width {

@@ -59,11 +59,11 @@ fn color_for(pct: f64) -> &'static str {
     }
 }
 
-fn money(v: f64) -> String {
+pub fn money(v: f64) -> String {
     format!("${v:.2}")
 }
 
-fn compact(n: u64) -> String {
+pub fn compact(n: u64) -> String {
     if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)
     } else if n >= 1_000 {
@@ -76,7 +76,7 @@ fn compact(n: u64) -> String {
 pub fn bar(used: f64, cap: f64, width: usize) -> String {
     let pct = if cap > 0.0 { (used / cap).clamp(0.0, 1.0) } else { 0.0 };
     let filled = (pct * width as f64).round() as usize;
-    let pct_val = if cap > 0.0 { used / cap * 100.0 } else { 0.0 };
+    let pct_val = pct * 100.0;
     format!(
         "{}{pct_val:>5.1}%{} {}{}{}{}",
         color_for(pct_val),
@@ -88,7 +88,7 @@ pub fn bar(used: f64, cap: f64, width: usize) -> String {
     )
 }
 
-fn rel_time(reset_at: Option<f64>, now: u64) -> String {
+pub fn rel_time(reset_at: Option<f64>, now: u64) -> String {
     let Some(ms) = reset_at else {
         return "unknown".into();
     };
@@ -109,7 +109,7 @@ fn rel_time(reset_at: Option<f64>, now: u64) -> String {
 }
 
 /// Parse "2026-09-27T12:23:00.000Z" → epoch ms.
-fn parse_iso_utc(s: &str) -> Option<f64> {
+pub fn parse_iso_utc(s: &str) -> Option<f64> {
     let (date, rest) = s.split_once('T')?;
     let rest = rest.trim_end_matches('Z');
     let mut dp = date.split('-');
@@ -133,7 +133,7 @@ fn parse_iso_utc(s: &str) -> Option<f64> {
 }
 
 /// Elapsed % of a rolling window: window length = dur_secs, ends at reset_at.
-fn elapsed_pct(reset_at: Option<f64>, dur_secs: u64, now: u64) -> Option<u8> {
+pub fn elapsed_pct(reset_at: Option<f64>, dur_secs: u64, now: u64) -> Option<u8> {
     let reset_ms = reset_at?;
     let reset_s = reset_ms as u64 / 1000;
     let start = reset_s.checked_sub(dur_secs)?;
@@ -145,7 +145,7 @@ fn elapsed_pct(reset_at: Option<f64>, dur_secs: u64, now: u64) -> Option<u8> {
     Some(pct.round() as u8)
 }
 
-fn window_line(
+pub fn window_line(
     label: &str,
     w: &crate::api::Window,
     now: u64,
