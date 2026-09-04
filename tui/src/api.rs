@@ -55,6 +55,8 @@ pub struct SubData {
     pub plan_id: String,
     #[serde(default)]
     pub current_period_end: Option<String>,
+    #[serde(default)]
+    pub current_period_start: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -110,6 +112,7 @@ pub fn subscriptions(key: &str) -> Result<SubData, String> {
         status: "none".into(),
         plan_id: "free".into(),
         current_period_end: None,
+            current_period_start: None,
     }))
 }
 

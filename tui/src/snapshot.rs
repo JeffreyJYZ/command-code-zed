@@ -104,6 +104,7 @@ fn empty_snapshot() -> Snapshot {
             status: "—".into(),
             plan_id: "free".into(),
             current_period_end: None,
+            current_period_start: None,
         },
         credits: api::CreditsResp {
             credits: api::Credits {

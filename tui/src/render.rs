@@ -132,15 +132,37 @@ fn parse_iso_utc(s: &str) -> Option<f64> {
     Some((secs + h * 3600 + mi * 60) as f64 * 1000.0 + sec * 1000.0)
 }
 
-fn window_line(label: &str, w: &crate::api::Window, now: u64, bar_width: usize) -> String {
+/// Elapsed % of a rolling window: window length = dur_secs, ends at reset_at.
+fn elapsed_pct(reset_at: Option<f64>, dur_secs: u64, now: u64) -> Option<u8> {
+    let reset_ms = reset_at?;
+    let reset_s = reset_ms as u64 / 1000;
+    let start = reset_s.checked_sub(dur_secs)?;
+    if now < start {
+        return None; // window hasn't started
+    }
+    let elapsed = now - start;
+    let pct = (elapsed as f64 / dur_secs as f64 * 100.0).clamp(0.0, 100.0);
+    Some(pct.round() as u8)
+}
+
+fn window_line(
+    label: &str,
+    w: &crate::api::Window,
+    now: u64,
+    bar_width: usize,
+    dur_secs: Option<u64>,
+) -> String {
     let flag = if w.exceeded { format!(" {RED}{BOLD}LIMIT EXCEEDED{RESET}") } else { String::new() };
+    let thru = dur_secs
+        .and_then(|d| elapsed_pct(w.reset_at, d, now))
+        .map(|p| format!(" · {DIM}window {p}% elapsed{RESET}"))
+        .unwrap_or_default();
     format!(
-        " {BOLD}{label:<8}{RESET} {} {DIM}{} / {} · resets in {}{}{flag}",
+        " {BOLD}{label:<8}{RESET} {} {DIM}{} / {} · resets in {}{thru}{RESET}{flag}",
         bar(w.used, w.cap, bar_width),
         money(w.used),
         money(w.cap),
         rel_time(w.reset_at, now),
-        RESET,
     )
 }
 
@@ -198,19 +220,25 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
     if let Some(cap) = monthly_cap {
         let used = (cap - s.credits.credits.monthly_credits).clamp(0.0, cap);
         let reset_at = s.sub.current_period_end.as_ref().and_then(|e| parse_iso_utc(e));
+        let dur = match (&s.sub.current_period_start, &s.sub.current_period_end) {
+            (Some(st), Some(en)) => parse_iso_utc(st)
+                .zip(parse_iso_utc(en))
+                .map(|(a, b)| ((b - a) as u64 / 1000).max(1)),
+            _ => None,
+        };
         o.push_str(&window_line("Monthly", &crate::api::Window {
             used,
             cap,
             exceeded: false,
             reset_at,
-        }, s.now, bar_width));
+        }, s.now, bar_width, dur));
         o.push('\n');
     }
     match (&s.credits.window_limits.five_hour, &s.credits.window_limits.weekly) {
         (Some(h5), Some(wk)) => {
-            o.push_str(&window_line("5-hour", h5, s.now, bar_width));
+            o.push_str(&window_line("5-hour", h5, s.now, bar_width, Some(5 * 3600)));
             o.push('\n');
-            o.push_str(&window_line("Weekly", wk, s.now, bar_width));
+            o.push_str(&window_line("Weekly", wk, s.now, bar_width, Some(7 * 86400)));
             o.push('\n');
         }
         (None, None) => {
@@ -218,11 +246,11 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
         }
         (h5, wk) => {
             if let Some(w) = h5 {
-                o.push_str(&window_line("5-hour", w, s.now, bar_width));
+                o.push_str(&window_line("5-hour", w, s.now, bar_width, Some(5 * 3600)));
                 o.push('\n');
             }
             if let Some(w) = wk {
-                o.push_str(&window_line("Weekly", w, s.now, bar_width));
+                o.push_str(&window_line("Weekly", w, s.now, bar_width, Some(7 * 86400)));
                 o.push('\n');
             }
         }
