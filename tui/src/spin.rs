@@ -25,6 +25,8 @@ impl Spin {
 
     pub fn start(&mut self, msg: &str) {
         self.stop(); // never two at once
+        // stop() leaves the flag true; reset or the new thread exits instantly
+        self.stop_flag.store(false, Ordering::Relaxed);
         let stop = self.stop_flag.clone();
         let msg = msg.to_string();
         self.handle = Some(std::thread::spawn(move || {
