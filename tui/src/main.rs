@@ -2,6 +2,8 @@ mod api;
 mod cli;
 mod config;
 mod render;
+mod report_render;
+mod reports;
 mod snapshot;
 
 #[cfg(test)]
@@ -31,6 +33,30 @@ fn main() {
             std::process::exit(1);
         }
         return;
+    }
+
+    // offline local reports — no API, no key needed
+    match args.subcmd {
+        Some(cli::SubCmd::Daily) => {
+            let d = reports::load_local();
+            print!("{}", report_render::table(&d.by_day, &d.total, args.last, args.json));
+            return;
+        }
+        Some(cli::SubCmd::Model) => {
+            let d = reports::load_local();
+            print!("{}", report_render::model_table(&d.by_model, args.json));
+            return;
+        }
+        Some(cli::SubCmd::Session) => {
+            let d = reports::load_local();
+            print!("{}", report_render::project_table(&d.by_project, args.json));
+            return;
+        }
+        Some(cli::SubCmd::Statusline) => {
+            statusline_cmd(&args);
+            return;
+        }
+        None => {}
     }
 
     let cfg = config::load();
@@ -94,4 +120,40 @@ fn main() {
             out.flush().ok();
         }
     }
+}
+
+fn statusline_cmd(args: &cli::Args) {
+    let _cfg = config::load();
+    let s = snapshot::snapshot_with_spinner(true);
+    let plan = render::plan_name(&s.sub.plan_id);
+    let cap = render::plan_monthly_cap(&s.sub.plan_id).unwrap_or(0.0);
+    if let Some(e) = &s.err {
+        println!("cmduse: {e}");
+        std::process::exit(1);
+    }
+    if args.json {
+        print!(
+            "{{\"plan\":\"{plan}\",\"monthlyRemaining\":{:.2},\"monthlyCap\":{:.2},\"fiveHourUsed\":{:.2},\"fiveHourCap\":{:.2},\"weeklyUsed\":{:.2},\"weeklyCap\":{:.2}}}",
+            s.credits.credits.monthly_credits,
+            cap,
+            s.credits.window_limits.five_hour.as_ref().map(|w| w.used).unwrap_or(0.0),
+            s.credits.window_limits.five_hour.as_ref().map(|w| w.cap).unwrap_or(0.0),
+            s.credits.window_limits.weekly.as_ref().map(|w| w.used).unwrap_or(0.0),
+            s.credits.window_limits.weekly.as_ref().map(|w| w.cap).unwrap_or(0.0),
+        );
+        return;
+    }
+    let h5 = s
+        .credits
+        .window_limits
+        .five_hour
+        .as_ref()
+        .map(|w| (w.used, w.cap));
+    let wk = s
+        .credits
+        .window_limits
+        .weekly
+        .as_ref()
+        .map(|w| (w.used, w.cap));
+    print!("{}", report_render::statusline(plan, s.credits.credits.monthly_credits, cap, h5, wk));
 }

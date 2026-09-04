@@ -1,3 +1,4 @@
+#[derive(Default)]
 pub struct Args {
     pub interval: Option<u64>,
     pub once: bool,
@@ -5,6 +6,17 @@ pub struct Args {
     pub bar_width: Option<usize>,
     pub help: bool,
     pub config_set: Option<(Option<u64>, Option<usize>)>,
+    pub subcmd: Option<SubCmd>,
+    pub last: Option<usize>,
+    pub json: bool,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum SubCmd {
+    Daily,
+    Model,
+    Session,
+    Statusline,
 }
 
 pub fn parse_args() -> Args {
@@ -15,6 +27,9 @@ pub fn parse_args() -> Args {
         bar_width: None,
         help: false,
         config_set: None,
+        subcmd: None,
+        last: None,
+        json: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -22,12 +37,24 @@ pub fn parse_args() -> Args {
             "-1" | "--once" => a.once = true,
             "-p" | "--plain" => a.plain = true,
             "-h" | "--help" | "help" => a.help = true,
+            "--json" | "json" if arg == "--json" => a.json = true,
             "-i" | "--interval" => {
                 a.interval = it.next().and_then(|v| v.parse().ok());
             }
             "-w" | "--bar-width" => {
                 a.bar_width = it.next().and_then(|v| v.parse().ok());
             }
+            "--last" | "-l" => match it.next().and_then(|v| v.parse().ok()) {
+                Some(n) => a.last = Some(n),
+                None => {
+                    eprintln!("--last needs a number (e.g. --last 7)");
+                    std::process::exit(2);
+                }
+            },
+            "daily" => a.subcmd = Some(SubCmd::Daily),
+            "model" => a.subcmd = Some(SubCmd::Model),
+            "session" | "sessions" | "project" => a.subcmd = Some(SubCmd::Session),
+            "statusline" => a.subcmd = Some(SubCmd::Statusline),
             "config" => {
                 // config set [interval=<s>] [width=<n>]
                 if let Some(sub) = it.next() {
@@ -89,20 +116,26 @@ pub fn usage() {
 pub fn usage_text() -> &'static str {
     "cmduse — Command Code usage dashboard
 
-Usage: cmduse [options]
+Usage: cmduse [options]           Live plan dashboard (watch mode)
+       cmduse -1                  One-shot dashboard
+       cmduse daily [--last N] [--json]    Local usage by day (offline)
+       cmduse model [--json]      Local usage by model
+       cmduse session [--json]    Local usage by project/session
+       cmduse statusline          Compact one-liner for prompts/tmux
+       cmduse config set interval=<s> width=<n>
 
 Options:
   -1, --once            Fetch once, print, exit (no watch)
   -p, --plain           No colors / no live redraw (for scripts, pipes)
   -i, --interval <s>    Refresh interval in seconds (default: config or 5)
   -w, --bar-width <n>   Progress bar width in chars (default: config or 20)
+      --last <n>        Show only the last N days (daily)
+      --json            Machine-readable JSON output
   -h, --help            This help
 
 Config: ~/.config/cmd-usage/config.json
   { \"interval_secs\": 5, \"bar_width\": 20 }
 
-  cmduse config set interval=<s> width=<n>   Save config options
-  cmduse config set interval=10              Change just one
-
-Requires: logged-in Command Code CLI (~/.commandcode/auth.json)"
+daily/model/session read ~/.commandcode/projects offline (no API calls).
+Dashboard needs: logged-in Command Code CLI (~/.commandcode/auth.json)"
 }

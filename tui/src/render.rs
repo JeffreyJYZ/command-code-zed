@@ -157,8 +157,31 @@ pub fn window_line(
         .and_then(|d| elapsed_pct(w.reset_at, d, now))
         .map(|p| format!(" · {DIM}window {p}% elapsed{RESET}"))
         .unwrap_or_default();
+    // burn-rate projection: spend rate over window elapsed time → when cap hits.
+    // ponytail: assumes flat spend rate; bursty sessions shift the ETA.
+    let pace = dur_secs
+        .zip(w.reset_at)
+        .and_then(|(d, reset)| {
+            let reset_s = reset as u64 / 1000;
+            let start = reset_s.checked_sub(d)?;
+            if now <= start || now >= reset_s {
+                return None; // window not started or already rolling over
+            }
+            let elapsed = (now - start) as f64;
+            let rate = w.used / elapsed; // $/sec
+            if rate <= 0.0 {
+                return None;
+            }
+            let secs_to_cap = (w.cap - w.used) / rate;
+            if secs_to_cap >= (reset_s - now) as f64 {
+                return None; // won't hit cap before reset
+            }
+            Some(rel_time(Some(secs_to_cap * 1000.0), 0))
+        })
+        .map(|eta| format!(" · {YELLOW}on pace to hit cap in {eta}{RESET}"))
+        .unwrap_or_default();
     format!(
-        " {BOLD}{label:<8}{RESET} {} {DIM}{} / {} · resets in {}{thru}{RESET}{flag}",
+        " {BOLD}{label:<8}{RESET} {} {DIM}{} / {} · resets in {}{thru}{pace}{RESET}{flag}",
         bar(w.used, w.cap, bar_width),
         money(w.used),
         money(w.cap),
