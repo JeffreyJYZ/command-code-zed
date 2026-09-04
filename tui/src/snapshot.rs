@@ -36,6 +36,7 @@ fn fetch(show_spinner: bool) -> Snapshot {
         while !stop2.load(std::sync::atomic::Ordering::Relaxed) {
             if is_tty {
                 let mut out = std::io::stdout();
+                // cursor is ON the status line (no trailing newline); overwrite it
                 write!(
                     out,
                     "\r\x1b[2K{CYAN}fetching usage… {}{RESET}",

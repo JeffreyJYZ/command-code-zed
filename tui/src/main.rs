@@ -38,15 +38,14 @@ fn main() {
         return;
     }
 
-    // live mode: true in-place redraw — cursor to first line of frame,
-    // rewrite with per-line clear. First frame: print normally.
-    // Fetch spinner animates on the line below the frame, then vanishes.
+    // live mode: true in-place redraw. Frame's last line = status line,
+    // drawn WITHOUT trailing newline so the cursor stays on it. Spinner
+    // and countdown rewrite that line in place. No scroll, no drift.
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     let mut prev_lines = 0usize;
-    let mut first = true;
     loop {
-        let s = snapshot::snapshot_with_spinner(first);
+        let s = snapshot::snapshot_with_spinner(prev_lines > 0);
         let text = if args.plain {
             render::render_plain(&s, bar_width)
         } else {
@@ -55,19 +54,24 @@ fn main() {
         let status_line = format!(
             "{DIM}refreshing every {interval}s · ctrl-c to quit{RESET}"
         );
-        let frame = format!("{text}{status_line}\n");
-        if !first {
-            // move cursor up to top of previous frame
-            write!(out, "\x1b[{prev_lines}F").ok();
+        if prev_lines > 0 {
+            // move cursor up to top of previous frame (we're ON its last line)
+            write!(out, "\x1b[{}F", prev_lines - 1).ok();
         }
-        for line in frame.lines() {
-            // clear line, move to col 0, write, newline
-            write!(out, "\x1b[2K\r{line}\n").ok();
+        let frame = format!("{text}{status_line}");
+        let lines: Vec<&str> = frame.lines().collect();
+        let n = lines.len();
+        for (i, line) in lines.iter().enumerate() {
+            if i + 1 < n {
+                write!(out, "\x1b[2K\r{line}\n").ok();
+            } else {
+                // last line: clear and write, NO newline — cursor stays here
+                write!(out, "\x1b[2K\r{line}").ok();
+            }
         }
         out.flush().ok();
-        prev_lines = frame.lines().count();
-        first = false;
-        // countdown: rewrite just the status line each second
+        prev_lines = n;
+        // countdown: rewrite just the status line each second (cursor already on it)
         for remaining in (1..interval).rev() {
             std::thread::sleep(std::time::Duration::from_secs(1));
             write!(
