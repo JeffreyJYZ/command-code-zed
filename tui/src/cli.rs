@@ -51,6 +51,10 @@ pub fn parse_args() -> Args {
             "-1" | "--once" => a.once = true,
             "-p" | "--plain" => a.plain = true,
             "-h" | "--help" | "help" => a.help = true,
+            "-V" | "--version" | "version" => {
+                println!("cmduse {}", env!("CARGO_PKG_VERSION"));
+                std::process::exit(0);
+            }
             "--json" => a.json = true,
             "--local" => a.local = true,
             "-i" | "--interval" => {
@@ -171,6 +175,7 @@ Options:
       --hours <n>       hourly: number of hours back (default 24, max 168)
       --json            Machine-readable JSON output
       --local           daily: use local CLI logs only (skip account API)
+  -V, --version         Print version
   -h, --help            This help
 
 Config: ~/.config/cmd-usage/config.json

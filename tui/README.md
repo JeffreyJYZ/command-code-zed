@@ -31,6 +31,7 @@ cargo install cmd-usage              # any platform with Rust
 ```sh
 cmduse                       # live dashboard, redraws in place (default every 5s)
 cmduse -1                    # one-shot fetch, print, exit
+cmduse -V                    # print version
 cmduse -p -1                 # plain output, no ANSI (for scripts/pipes)
 cmduse -i 30                 # refresh every 30s
 cmduse -w 40                 # 40-char progress bars
