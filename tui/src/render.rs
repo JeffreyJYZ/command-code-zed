@@ -353,8 +353,13 @@ pub fn sparkline(history: &[f64]) -> String {
     if max <= 0.0 {
         return "▁".repeat(history.len());
     }
+    // any nonzero activity gets a visible bar; otherwise a 0.02 delta next
+    // to an old 0.50 spike rounds to zero and looks dead
     history
         .iter()
-        .map(|v| BARS[((v / max) * 7.0).round() as usize])
+        .map(|v| {
+            let idx = (v / max * 7.0).round() as usize;
+            BARS[idx.max(if *v > 0.0 { 1 } else { 0 })]
+        })
         .collect()
 }

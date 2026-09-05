@@ -331,6 +331,16 @@ fn statusline_templates() {
 }
 
 #[test]
+fn sparkline_small_deltas_visible() {
+    // tiny recent delta next to a big old spike must not render as zero bar
+    let out = sparkline(&[0.5, 0.0, 0.02]);
+    assert_ne!(out.chars().last(), Some('▁'));
+    // zero deltas still render as zero bar
+    let out = sparkline(&[0.5, 0.0, 0.0]);
+    assert_eq!(out.chars().last(), Some('▁'));
+}
+
+#[test]
 fn sparkline_shapes() {
     // flat → all lowest bar
     assert_eq!(sparkline(&[1.0, 1.0, 1.0]), "███"); // flat values scale to full-height max
