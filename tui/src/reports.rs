@@ -242,34 +242,44 @@ pub fn day_shift(day: &str, n: i64) -> Option<String> {
     Some(format!("{y:04}-{m:02}-{d:02}"))
 }
 
+/// Fetch `f(day)` for many days with bounded concurrency.
+/// ponytail: 8-way pool, no semaphore crate — spawn-and-join in chunks.
+fn bounded_fetch(
+    starts: &[String],
+    key: &str,
+    f: fn(&str, &str) -> Result<ApiSummary, String>,
+) -> Result<Vec<(String, ApiSummary)>, String> {
+    const POOL: usize = 8;
+    let mut out: Vec<(String, ApiSummary)> = Vec::new();
+    for chunk in starts.chunks(POOL) {
+        let handles: Vec<_> = chunk
+            .iter()
+            .map(|d| {
+                let s = iso_day_start(d);
+                let k = key.to_string();
+                let dd = d.clone();
+                std::thread::spawn(move || (dd, f(&s, &k)))
+            })
+            .collect();
+        for h in handles {
+            let (d, r) = h.join().map_err(|_| "usage thread panicked".to_string())?;
+            out.push((d, r?));
+        }
+    }
+    Ok(out)
+}
+
 /// Account-wide per-day usage for the last `days` days (today included),
-/// fetched in parallel from the usage API. Includes usage from every
-/// harness that used the account key.
+/// fetched from the usage API (8-way concurrent). Includes usage from
+/// every harness that used the account key.
 pub fn load_account_daily(days: usize, key: &str) -> Result<ByDay, String> {
     let today = today_utc();
-    // day boundaries needed: start of each day + start of "tomorrow" (=now, cum 0 conceptually;
-    // actually today's usage = cum(today start))
     let days = days.max(1);
     let starts: Vec<String> = (0..days)
         .filter_map(|i| day_shift(&today, -(i as i64)))
         .collect();
 
-    let handles: Vec<_> = starts
-        .iter()
-        .map(|d| {
-            let s = iso_day_start(d);
-            let k = key.to_string();
-            let dd = d.clone();
-            std::thread::spawn(move || (dd, fetch_cumulative(&s, &k)))
-        })
-        .collect();
-
-    // collect in chronological order (oldest first)
-    let mut cums: Vec<(String, ApiSummary)> = Vec::new();
-    for h in handles {
-        let (d, r) = h.join().map_err(|_| "usage thread panicked".to_string())?;
-        cums.push((d, r?));
-    }
+    let mut cums = bounded_fetch(&starts, key, fetch_cumulative)?;
     // sort oldest → newest
     cums.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -384,18 +394,20 @@ pub fn load_account_hourly(hours: usize, key: &str) -> Result<Vec<(String, Total
         .map(|i| current_hour - (i as u64) * 3600)
         .collect();
 
-    let handles: Vec<_> = bounds
-        .iter()
-        .map(|&b| {
-            let s = iso_hour_start(b);
-            let k = key.to_string();
-            std::thread::spawn(move || fetch_cumulative(&s, &k))
-        })
-        .collect();
-
+    // bounded 8-way pool (same as daily)
     let mut cums: Vec<ApiSummary> = Vec::new();
-    for h in handles {
-        cums.push(h.join().map_err(|_| "usage thread panicked".to_string())??);
+    for chunk in bounds.chunks(8) {
+        let handles: Vec<_> = chunk
+            .iter()
+            .map(|&b| {
+                let s = iso_hour_start(b);
+                let k = key.to_string();
+                std::thread::spawn(move || fetch_cumulative(&s, &k))
+            })
+            .collect();
+        for h in handles {
+            cums.push(h.join().map_err(|_| "usage thread panicked".to_string())??);
+        }
     }
 
     // cum[i] = usage from bounds[i] → now. per-hour i = cum[i] - cum[i+1];
@@ -433,4 +445,85 @@ pub fn load_account_hourly(hours: usize, key: &str) -> Result<Vec<(String, Total
         ));
     }
     Ok(out)
+}
+
+/// Local hourly buckets from JSONL logs (offline, CLI sessions only).
+/// Returns (label, totals) oldest-first for the last `hours` hours, UTC.
+pub fn load_local_hourly(hours: usize) -> Vec<(String, Totals)> {
+    let hours = hours.max(1);
+    let now = now_epoch();
+    let current_hour = now - now % 3600;
+    let oldest = current_hour - (hours as u64 - 1) * 3600;
+
+    // timestamp ISO → hour bucket index
+    let bucket_of = |ts: &str| -> Option<u64> {
+        let ms: f64 = parse_iso_epoch_ms(ts)?;
+        let s = (ms / 1000.0) as u64;
+        let h = s - s % 3600;
+        (h >= oldest).then_some(h)
+    };
+
+    let mut by_hour: BTreeMap<u64, Totals> = BTreeMap::new();
+    let dir = data_dir();
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    for proj in entries.flatten() {
+        let Ok(files) = std::fs::read_dir(proj.path()) else {
+            continue;
+        };
+        for f in files.flatten() {
+            let name = f.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".jsonl") || name.contains("checkpoints") {
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(f.path()) else {
+                continue;
+            };
+            for line in text.lines() {
+                let Ok(l) = serde_json::from_str::<Line>(line) else {
+                    continue;
+                };
+                if l.kind != "message" {
+                    continue;
+                }
+                let Some(u) = l.usage else { continue };
+                if l.message.as_ref().and_then(|m| m.role.as_deref()) == Some("user") {
+                    continue;
+                }
+                if let Some(h) = bucket_of(&l.timestamp) {
+                    by_hour.entry(h).or_default().add(&u);
+                }
+            }
+        }
+    }
+    (0..hours)
+        .rev()
+        .map(|i| {
+            let h = current_hour - (i as u64) * 3600;
+            (hour_label(h), by_hour.get(&h).copied().unwrap_or_default())
+        })
+        .collect()
+}
+
+/// ISO timestamp string → epoch ms (local parse of "…Z")
+fn parse_iso_epoch_ms(ts: &str) -> Option<f64> {
+    let (date, rest) = ts.split_once('T')?;
+    let rest = rest.trim_end_matches('Z');
+    let mut dp = date.split('-');
+    let y: i64 = dp.next()?.parse().ok()?;
+    let mo: i64 = dp.next()?.parse().ok()?;
+    let d: i64 = dp.next()?.parse().ok()?;
+    let y2 = if mo <= 2 { y - 1 } else { y };
+    let era = y2 / 400;
+    let yoe = y2 - era * 400;
+    let mp = (mo + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    let mut hp = rest.split(':');
+    let h: i64 = hp.next().unwrap_or("0").parse().ok()?;
+    let mi: i64 = hp.next().unwrap_or("0").parse().ok()?;
+    let sec: f64 = hp.next().unwrap_or("0").parse().ok()?;
+    Some((days * 86400 + h * 3600 + mi * 60) as f64 * 1000.0 + sec * 1000.0)
 }

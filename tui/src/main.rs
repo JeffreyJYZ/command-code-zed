@@ -1,5 +1,6 @@
 mod api;
 mod cli;
+mod update_check;
 mod config;
 mod render;
 mod report_render;
@@ -21,6 +22,7 @@ const RESET: &str = "\x1b[0m";
 const DIM: &str = "\x1b[2m";
 
 fn main() {
+    update_check::check();
     let args = cli::parse_args();
     if args.help {
         cli::usage();
@@ -61,20 +63,32 @@ fn main() {
             return;
         }
         Some(cli::SubCmd::Hours) => {
-            let key = match api::api_key() {
-                Ok(k) => k,
-                Err(e) => {
-                    eprintln!("error: {e}");
-                    std::process::exit(1);
+            let rows = if args.local {
+                reports::load_local_hourly(args.hours.unwrap_or(24))
+            } else {
+                let key = match api::api_key() {
+                    Ok(k) => k,
+                    Err(e) => {
+                        eprintln!("error: {e}");
+                        std::process::exit(1);
+                    }
+                };
+                match reports::load_account_hourly(args.hours.unwrap_or(24), &key) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        eprintln!("error: {e}");
+                        std::process::exit(1);
+                    }
                 }
             };
-            match reports::load_account_hourly(args.hours.unwrap_or(24), &key) {
-                Ok(rows) => print!("{}", report_render::hourly_table(&rows, args.json)),
-                Err(e) => {
-                    eprintln!("error: {e}");
-                    std::process::exit(1);
-                }
-            }
+            print!(
+                "{}",
+                report_render::hourly_table(
+                    &rows,
+                    args.json,
+                    if args.local { "local, CLI sessions" } else { "all harnesses, UTC" }
+                )
+            );
             return;
         }
         Some(cli::SubCmd::Model) => {
@@ -121,7 +135,15 @@ fn main() {
     let mut history: Vec<f64> = Vec::new();
     loop {
         let s = snapshot::snapshot_with_spinner(prev_lines > 0);
-        history.push(s.credits.credits.monthly_credits);
+        // track 5-hour window spend — most actionable short-term signal
+        history.push(
+            s.credits
+                .window_limits
+                .five_hour
+                .as_ref()
+                .map(|w| w.used)
+                .unwrap_or(0.0),
+        );
         // ponytail: 60 samples in memory, no persistence — restart resets trend
         if history.len() > 60 {
             history.remove(0);
@@ -132,7 +154,7 @@ fn main() {
             render::render(&s, bar_width)
         };
         let spark = if history.len() >= 2 {
-            format!("{DIM}credits trend ({}s){RESET} {}\n", interval, render::sparkline(&history))
+            format!("{DIM}5h spend trend ({}s){RESET} {}\n", interval, render::sparkline(&history))
         } else {
             String::new()
         };

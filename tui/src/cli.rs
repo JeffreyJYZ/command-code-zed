@@ -59,8 +59,8 @@ pub fn parse_args() -> Args {
             "-w" | "--bar-width" => {
                 a.bar_width = it.next().and_then(|v| v.parse().ok());
             }
-            "--days" | "--last" | "-l" => match it.next().and_then(|v| v.parse().ok()) {
-                Some(n) => a.last = Some(n),
+            "--days" | "--last" | "-l" => match it.next().and_then(|v| v.parse::<usize>().ok()) {
+                Some(n) => a.last = Some(n.clamp(1, 365)),
                 None => {
                     eprintln!("--days needs a number (e.g. --days 7)");
                     std::process::exit(2);
@@ -167,7 +167,7 @@ Options:
   -p, --plain           No colors / no live redraw (for scripts, pipes)
   -i, --interval <s>    Refresh interval in seconds (default: config or 5)
   -w, --bar-width <n>   Progress bar width in chars (default: config or 20)
-      --days <n>        daily: number of days back (default 7)
+      --days <n>        daily: number of days back (default 7, max 365)
       --hours <n>       hourly: number of hours back (default 24, max 168)
       --json            Machine-readable JSON output
       --local           daily: use local CLI logs only (skip account API)

@@ -36,8 +36,10 @@ cmduse -i 30                 # refresh every 30s
 cmduse -w 40                 # 40-char progress bars
 
 cmduse daily --days 14       # account usage by day (all harnesses, from usage API)
+                             # --days max 365, fetched 8-at-a-time
 cmduse daily --local         # CLI-logs-only (offline, misses other harnesses)
 cmduse hourly --hours 6      # account usage by hour (default 24, max 168)
+cmduse hourly --local        # hourly from local CLI logs (offline)
 cmduse model                 # local usage by model
 cmduse session               # local usage by project
 cmduse statusline            # compact one-liner for prompts/tmux
@@ -103,5 +105,6 @@ Logged-in [Command Code CLI](https://commandcode.ai) — reads your API key from
 ## Notes
 
 - Window bars: green <70%, yellow 70–90%, red ≥90%, plus `LIMIT EXCEEDED` flag.
-- Credits trend sparkline appears in watch mode after 2 refreshes.
+- 5h spend trend sparkline appears in watch mode after 2 refreshes.
+- `cmduse` checks crates.io once per 24h and warns on stderr if a newer version exists. Delete `~/.cache/cmd-usage/last-check` to force a check.
 - On Monthly caps: monthly pool is the plan total (e.g. $70 on GOAT). Docs describe per-model allowances, but the CLI and API meter one shared pool — verified empirically.

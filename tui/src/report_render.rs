@@ -233,19 +233,20 @@ pub fn account_table(by_day: &crate::reports::ByDay, total: &crate::reports::Tot
 }
 
 /// Hourly account usage table
-pub fn hourly_table(rows: &[(String, crate::reports::Totals)], json: bool) -> String {
+pub fn hourly_table(rows: &[(String, crate::reports::Totals)], json: bool, source: &str) -> String {
     if json {
         let items: Vec<String> = rows
             .iter()
             .map(|(h, t)| format!("\"{}\":{}", h, total_json(t)))
             .collect();
         return format!(
-            "{{\"scope\":\"account-hourly\",\"hours\":{{{}}}}}",
+            "{{\"scope\":\"hourly\",\"source\":\"{}\",\"hours\":{{{}}}}}",
+            source.replace(" ", "-"),
             items.join(",")
         );
     }
     let mut o = format!(
-        "{BOLD}Account usage by hour{RESET} {DIM}(all harnesses, UTC){RESET}\n\n"
+        "{BOLD}Usage by hour{RESET} {DIM}({source}){RESET}\n\n"
     );
     o.push_str(&format!(
         " {BOLD}{:<14}{RESET} {:>6} {:>10} {:>10} {:>10}\n",
