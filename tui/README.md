@@ -22,7 +22,8 @@ This billing period
 ## Install
 
 ```sh
-cargo install cmd-usage
+brew install JeffreyJYZ/tap/cmduse   # macOS (Homebrew)
+cargo install cmd-usage              # any platform with Rust
 ```
 
 ## Usage
