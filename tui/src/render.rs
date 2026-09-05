@@ -203,6 +203,13 @@ pub struct Snapshot {
 }
 
 pub fn render(s: &Snapshot, bar_width: usize) -> String {
+    // error: single minimal frame. Don't render fake zero-data plan/credits
+    // below it (was: "Free · —" with $0.00 everywhere on API failure).
+    if let Some(e) = &s.err {
+        return format!(
+            "{BOLD}Command Code Usage{RESET} {DIM}· fetch failed{RESET}\n{RED}error:{RESET} {e}\n{DIM}retrying on next refresh{RESET}"
+        );
+    }
     let mut o = String::new();
     o.push_str(&format!(
         "{BOLD}Command Code Usage{RESET} {DIM}· {} · {}{RESET}\n",
@@ -236,10 +243,6 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
                 money(s.credits.credits.free_credits),
             ));
         }
-    }
-
-    if let Some(e) = &s.err {
-        o.push_str(&format!("\n{RED}error:{RESET} {e}\n"));
     }
 
     o.push_str(&format!("\n{BOLD}Usage windows{RESET}\n"));

@@ -183,6 +183,11 @@ fn main() {
                 write!(out, "\x1b[2K\r{line}").ok();
             }
         }
+        if n < prev_lines {
+            // new frame shorter than old (error frame): kill the stale lines
+            // below so they don't survive as garbage
+            write!(out, "\n\x1b[0J\r\x1b[{}F", n).ok();
+        }
         out.flush().ok();
         prev_lines = n;
         // countdown: rewrite just the status line each second (cursor already on it)
