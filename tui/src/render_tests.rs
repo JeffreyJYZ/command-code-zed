@@ -329,3 +329,16 @@ fn statusline_templates() {
     let plain = crate::report_render::strip_ansi(&out);
     assert!(plain.contains("0%"));
 }
+
+#[test]
+fn sparkline_shapes() {
+    // flat → all lowest bar
+    assert_eq!(sparkline(&[1.0, 1.0, 1.0]), "███"); // flat values scale to full-height max
+    // rising trend
+    assert_eq!(sparkline(&[0.0, 5.0, 10.0]), "▁▅█"); // 0/10→▁, 5/10→mid, 10/10→full
+    // fewer than 2 points → empty
+    assert_eq!(sparkline(&[]), "");
+    assert_eq!(sparkline(&[5.0]), "");
+    // all zeros → all low bars, no NaN panic
+    assert_eq!(sparkline(&[0.0, 0.0]), "▁▁");
+}

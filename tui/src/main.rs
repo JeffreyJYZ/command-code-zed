@@ -118,12 +118,23 @@ fn main() {
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     let mut prev_lines = 0usize;
+    let mut history: Vec<f64> = Vec::new();
     loop {
         let s = snapshot::snapshot_with_spinner(prev_lines > 0);
+        history.push(s.credits.credits.monthly_credits);
+        // ponytail: 60 samples in memory, no persistence — restart resets trend
+        if history.len() > 60 {
+            history.remove(0);
+        }
         let text = if args.plain {
             render::render_plain(&s, bar_width)
         } else {
             render::render(&s, bar_width)
+        };
+        let spark = if history.len() >= 2 {
+            format!("{DIM}credits trend ({}s){RESET} {}\n", interval, render::sparkline(&history))
+        } else {
+            String::new()
         };
         let status_line = format!(
             "{DIM}refreshing every {interval}s · ctrl-c to quit{RESET}"
@@ -132,7 +143,7 @@ fn main() {
             // move cursor up to top of previous frame (we're ON its last line)
             write!(out, "\x1b[{}F", prev_lines - 1).ok();
         }
-        let frame = format!("{text}{status_line}");
+        let frame = format!("{text}{spark}{status_line}");
         let lines: Vec<&str> = frame.lines().collect();
         let n = lines.len();
         for (i, line) in lines.iter().enumerate() {

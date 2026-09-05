@@ -75,6 +75,13 @@ pub struct UsageSummary {
 }
 
 pub fn api_key() -> std::io::Result<String> {
+    // CMD_API_KEY override: use any account key without touching auth.json
+    // (multi-account / testing)
+    if let Ok(k) = std::env::var("CMD_API_KEY") {
+        if !k.is_empty() {
+            return Ok(k);
+        }
+    }
     let path = home().join(".commandcode/auth.json");
     let text = std::fs::read_to_string(path)?;
     let v: serde_json::Value = serde_json::from_str(&text)

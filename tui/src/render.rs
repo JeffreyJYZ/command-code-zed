@@ -339,3 +339,19 @@ pub fn render_plain(s: &Snapshot, bar_width: usize) -> String {
     let _ = bar_width;
     o
 }
+
+/// ASCII cost trend: 8-point sparkline, last `cap` samples of $ spent.
+pub fn sparkline(history: &[f64]) -> String {
+    const BARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    if history.len() < 2 {
+        return String::new();
+    }
+    let max = history.iter().cloned().fold(0.0_f64, f64::max);
+    if max <= 0.0 {
+        return "▁".repeat(history.len());
+    }
+    history
+        .iter()
+        .map(|v| BARS[((v / max) * 7.0).round() as usize])
+        .collect()
+}
