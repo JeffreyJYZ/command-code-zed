@@ -92,10 +92,13 @@ pub fn rel_time(reset_at: Option<f64>, now: u64) -> String {
     let Some(ms) = reset_at else {
         return "unknown".into();
     };
-    let diff = (ms as u64 / 1000).saturating_sub(now);
-    if diff == 0 {
-        return "now".into();
+    let reset_s = ms as u64 / 1000;
+    if reset_s <= now {
+        // resetAt already passed (clock skew or window rolling over);
+        // next fetch will pick up the fresh window
+        return "resetting…".into();
     }
+    let diff = reset_s - now;
     let d = diff / 86400;
     let h = (diff % 86400) / 3600;
     let m = (diff % 3600) / 60;
@@ -103,8 +106,10 @@ pub fn rel_time(reset_at: Option<f64>, now: u64) -> String {
         format!("{d}d {h}h")
     } else if h > 0 {
         format!("{h}h {m}m")
-    } else {
+    } else if m > 0 {
         format!("{m}m")
+    } else {
+        "<1m".into()
     }
 }
 

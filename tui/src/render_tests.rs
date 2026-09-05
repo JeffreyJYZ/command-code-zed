@@ -89,10 +89,12 @@ fn rel_time_windows() {
     assert_eq!(rel_time(Some((now as f64 + 3900.0) * 1000.0), now), "1h 5m");
     // 2d 3h
     assert_eq!(rel_time(Some((now as f64 + 2.0 * 86400.0 + 3.0 * 3600.0) * 1000.0), now), "2d 3h");
-    // already passed
-    assert_eq!(rel_time(Some((now as f64 - 1.0) * 1000.0), now), "now");
+    // already passed (clock skew / rolling over)
+    assert_eq!(rel_time(Some((now as f64 - 1.0) * 1000.0), now), "resetting…");
     // exactly now
-    assert_eq!(rel_time(Some(now as f64 * 1000.0), now), "now");
+    assert_eq!(rel_time(Some(now as f64 * 1000.0), now), "resetting…");
+    // under a minute
+    assert_eq!(rel_time(Some((now as f64 + 30.0) * 1000.0), now), "<1m");
     // missing
     assert_eq!(rel_time(None, now), "unknown");
 }
