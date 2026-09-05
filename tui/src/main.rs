@@ -132,29 +132,36 @@ fn main() {
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     let mut prev_lines = 0usize;
-    let mut history: Vec<f64> = Vec::new();
+    let mut history: Vec<f64> = Vec::new(); // deltas, $ per refresh
+    let mut history_used: Vec<f64> = Vec::new(); // raw cumulative 5h spend
     loop {
         let s = snapshot::snapshot_with_spinner(prev_lines > 0);
-        // track 5-hour window spend — most actionable short-term signal
-        history.push(
-            s.credits
-                .window_limits
-                .five_hour
-                .as_ref()
-                .map(|w| w.used)
-                .unwrap_or(0.0),
-        );
-        // ponytail: 60 samples in memory, no persistence — restart resets trend
-        if history.len() > 60 {
-            history.remove(0);
+        // track 5-hour spend DELTA between refreshes — cumulative spend is
+        // monotonic (sparkline of it is all-full); deltas show burst vs idle
+        let used = s
+            .credits
+            .window_limits
+            .five_hour
+            .as_ref()
+            .map(|w| w.used)
+            .unwrap_or(0.0);
+        let delta = history_used
+            .last()
+            .map(|prev| (used - prev).max(0.0))
+            .unwrap_or(0.0);
+        history_used.push(used);
+        if history_used.len() > 60 {
+            history_used.remove(0);
         }
+        history.push(delta);
+        // ponytail: 60 samples in memory, no persistence — restart resets trend
         let text = if args.plain {
             render::render_plain(&s, bar_width)
         } else {
             render::render(&s, bar_width)
         };
         let spark = if history.len() >= 2 {
-            format!("{DIM}5h spend trend ({}s){RESET} {}\n", interval, render::sparkline(&history))
+            format!("{DIM}5h spend rate ({}s){RESET} {}\n", interval, render::sparkline(&history))
         } else {
             String::new()
         };
