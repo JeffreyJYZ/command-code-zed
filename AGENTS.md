@@ -84,6 +84,7 @@ tui/                cmduse CLI crate (published as `cmd-usage` on crates.io, bin
 - Always update AGENTS.md and README.md for each change you make.
 - Always learn from the user when the user says explicit preferences, and note them in a "User Preferences" section in AGENTS.md.
 - Always read a file before editing it
+- For licenses, always fetch them from their source, never from memory.
 
 # User Preferences
 

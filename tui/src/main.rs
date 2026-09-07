@@ -184,9 +184,14 @@ fn main() {
             }
         }
         if n < prev_lines {
-            // new frame shorter than old (error frame): kill the stale lines
-            // below so they don't survive as garbage
-            write!(out, "\n\x1b[0J\r\x1b[{}F", n).ok();
+            // new frame shorter than old (error frame): pad with cleared lines
+            // up to the old height so the bottom anchor row never moves —
+            // writing \n here would scroll the screen and desync the cursor.
+            for _ in n..prev_lines {
+                write!(out, "\x1b[2K\r\n").ok();
+            }
+            // cursor now one line past old bottom; step back up to new bottom
+            write!(out, "\x1b[1F").ok();
         }
         out.flush().ok();
         prev_lines = n;
