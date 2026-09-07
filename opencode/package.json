@@ -6,8 +6,7 @@
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
 	"scripts": {
-		"build": "bun build src/index.ts --outdir dist --target bun --external @opencode-ai/plugin --external @opencode-ai/sdk && bun run types",
-		"types": "tsc --emitDeclarationOnly --declaration --outDir dist",
+		"build": "bun build src/index.ts --outdir dist --target bun --external @opencode-ai/plugin --external @opencode-ai/sdk && tsc --emitDeclarationOnly --declaration --outDir dist",
 		"test": "bun test",
 		"extract": "bun run scripts/extract-gating.ts",
 		"typecheck": "tsc --noEmit"
@@ -19,15 +18,10 @@
 		"@types/bun": "latest",
 		"typescript": "^5"
 	},
-	"files": [
-		"dist",
-		"README.md"
-	],
-	"keywords": [
-		"opencode",
-		"command-code",
-		"plugin",
-		"provider"
-	],
-	"license": "MIT"
+	"files": ["dist", "README.md", "LICENSE"],
+	"keywords": ["opencode", "command-code", "plugin", "provider", "ai-sdk"],
+	"license": "MIT",
+	"publishConfig": {
+		"access": "public"
+	}
 }
