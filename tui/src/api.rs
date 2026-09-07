@@ -97,17 +97,52 @@ fn home() -> std::path::PathBuf {
 }
 
 fn get(path: &str, key: &str) -> Result<Vec<u8>, String> {
-    let resp = ureq::get(&format!("{API_BASE}{path}"))
-        .set("Authorization", &format!("Bearer {key}"))
-        .timeout(std::time::Duration::from_secs(10))
-        .call()
-        .map_err(|e| format!("{path}: {e}"))?;
-    let mut buf = Vec::new();
-    resp.into_reader()
-        .take(10 * 1024 * 1024)
-        .read_to_end(&mut buf)
-        .map_err(|e| format!("{path}: {e}"))?;
-    Ok(buf)
+    const MAX_RETRIES: u32 = 5;
+    const BASE_DELAY_MS: u64 = 1000;
+    const MAX_DELAY_MS: u64 = 8000;
+
+    let mut last_err = String::new();
+    for attempt in 0..=MAX_RETRIES {
+        let resp = ureq::get(&format!("{API_BASE}{path}"))
+            .set("Authorization", &format!("Bearer {key}"))
+            .timeout(std::time::Duration::from_secs(15))
+            .call();
+
+        match resp {
+            Ok(resp) => {
+                let mut buf = Vec::new();
+                match resp.into_reader()
+                    .take(10 * 1024 * 1024)
+                    .read_to_end(&mut buf) {
+                    Ok(_) => return Ok(buf),
+                    Err(e) => last_err = format!("{path}: read error: {e}"),
+                }
+            }
+            Err(e) => {
+                last_err = format!("{path}: {e}");
+                let err_str = e.to_string().to_lowercase();
+                let is_transient = err_str.contains("tls")
+                    || err_str.contains("connection")
+                    || err_str.contains("timeout")
+                    || err_str.contains("unexpected end of file")
+                    || err_str.contains("connection reset")
+                    || err_str.contains("broken pipe")
+                    || err_str.contains("eof")
+                    || err_str.contains("handshake")
+                    || err_str.contains("certificate");
+                if !is_transient || attempt == MAX_RETRIES {
+                    break;
+                }
+            }
+        }
+
+        if attempt < MAX_RETRIES {
+            let delay = std::cmp::min(BASE_DELAY_MS * (1u64 << attempt), MAX_DELAY_MS);
+            let jitter = fastrand::u64(0..500);
+            std::thread::sleep(std::time::Duration::from_millis(delay + jitter));
+        }
+    }
+    Err(last_err)
 }
 
 use std::io::Read;
