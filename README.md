@@ -6,13 +6,19 @@ Three tools around the [Command Code](https://commandcode.ai) API:
 |---|---|---|
 | `cmduse` | [`tui/`](tui/README.md) | Terminal dashboard: plan/credits/windows, account + local usage reports, statusline. Published as `cmd-usage` on crates.io (`brew install JeffreyJYZ/tap/cmduse`). |
 | Zed extension | `src/` | `/cmd-usage` slash command in Zed's assistant panel (plan dashboard markdown). |
-| opencode plugin | [`opencode/`](opencode/) | `opencode-command-code` — registers Command Code as an opencode provider (live model list, plan gating) plus a `cmd_usage` tool and `/cmd-usage` command. |
+| opencode plugin | [`opencode/`](opencode/) | `@jeffreyjyz/opencode-command-code` on npm — registers Command Code as an opencode provider (live model list, plan gating) plus a `cmd_usage` tool and `/cmd-usage` command. |
 
 ## opencode plugin
 
 ```sh
-cd opencode && bun install && bun run build
-cp dist/index.js ~/.config/opencode/plugins/command-code.js
+# install
+npm i -g @jeffreyjyz/opencode-command-code
+
+# add to your opencode config (opencode.json or opencode.jsonc):
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["@jeffreyjyz/opencode-command-code"]
+}
 ```
 
 Restart opencode. `/connect` → **Command Code** → paste your API key (or set `CMD_API_KEY`, or have `cmd login` done — the plugin reads that too).
