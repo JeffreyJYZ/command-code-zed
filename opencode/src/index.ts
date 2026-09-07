@@ -65,20 +65,23 @@ function toModelDefs(
 
 export const CommandCodePlugin: Plugin = async (_input) => {
 	return {
-		// /connect entry: user pastes their Command Code API key.
+		// /connect entry for the Claude lane. The open lane (`command-code`) is
+		// intended to share the key via the user's existing manual config or via
+		// options.apiKey injected at startup, so no second /connect entry is
+		// needed.
 		auth: {
-			provider: "command-code",
+			provider: "command-code-anthropic",
 			loader: async (getAuth) => {
 				const auth = await getAuth();
 				if (auth?.type !== "api") {
-					throw new Error("No API key available. Please run '/connect' and choose Command Code.");
+					throw new Error("No API key available. Please run '/connect' and choose Command Code (Anthropic).");
 				}
 				return { apiKey: auth.key, baseURL: PROVIDER_BASE };
 			},
 			methods: [
 				{
 					type: "api",
-					label: "Command Code API key",
+					label: "Command Code API key (Claude / Anthropic)",
 					prompts: [
 						{
 							type: "text",
@@ -92,7 +95,7 @@ export const CommandCodePlugin: Plugin = async (_input) => {
 						try {
 							const me = await whoami(key);
 							if (!me.success) return { type: "failed" };
-							return { type: "success", key, provider: "command-code" };
+							return { type: "success", key, provider: "command-code-anthropic" };
 						} catch {
 							return { type: "failed" };
 						}
@@ -101,10 +104,11 @@ export const CommandCodePlugin: Plugin = async (_input) => {
 			],
 		},
 
-		// Register both wire lanes as config-time providers. Merges with any
-		// user-defined provider config (e.g. a manual "command-code" entry in
-		// opencode.jsonc) instead of clobbering it. Models fetched live with
-		// whatever key resolveKey finds (CMD_API_KEY or ~/.commandcode/auth.json).
+		// Register the Claude and OpenAI-compatible lanes. The `command-code`
+		// provider id is left entirely to the user's opencode.json(c) entry —
+		// the plugin never touches it, so the two provider ids this plugin
+		// owns are guaranteed not to collide. Merges non-destructively with
+		// any user-defined entries for the same ids.
 		config: async (cfg) => {
 			cfg.provider ??= {};
 
@@ -118,42 +122,42 @@ export const CommandCodePlugin: Plugin = async (_input) => {
 				};
 
 			let split: Awaited<ReturnType<typeof loadModels>> | undefined;
+			let openKey: string | undefined;
 			try {
-				split = await loadModels(await resolveKey());
+				openKey = await resolveKey();
+				split = await loadModels(openKey);
 			} catch {}
 
 			// ponytail: config-hook models cover old paths; provider.models hook
 			// (below) covers >=1.14.49. User-defined models always win the merge.
 			const claudeDefs = split
-				? toModelDefs(split.claude, "command-code", "@ai-sdk/anthropic")
+				? toModelDefs(split.claude, "command-code-anthropic", "@ai-sdk/anthropic")
 				: {};
 			const openDefs = split
-				? toModelDefs(split.open, "command-code-open", "@ai-sdk/openai-compatible")
+				? toModelDefs(split.open, "command-code-openai", "@ai-sdk/openai-compatible")
 				: {};
 
-			const userCc = existing("command-code");
-			cfg.provider["command-code"] = {
-				npm: userCc.options ? undefined : "@ai-sdk/anthropic",
-				name: "Command Code",
-				options: { baseURL: PROVIDER_BASE, ...userCc.options },
-				models: { ...claudeDefs, ...userCc.models },
+			const userAnthropic = existing("command-code-anthropic");
+			cfg.provider["command-code-anthropic"] = {
+				npm: userAnthropic.options ? undefined : "@ai-sdk/anthropic",
+				name: "Command Code (Anthropic)",
+				options: { baseURL: PROVIDER_BASE, ...userAnthropic.options },
+				models: { ...claudeDefs, ...userAnthropic.models },
 			};
-			const userOpen = existing("command-code-open");
-			// opencode only injects stored auth for providers with their own /connect
-			// entry; command-code-open shares the command-code key, so inject it here.
-			let openKey: string | undefined;
-			try {
-				openKey = await resolveKey();
-			} catch {}
-			cfg.provider["command-code-open"] = {
-				npm: "@ai-sdk/openai-compatible",
-				name: userOpen.options ? undefined : "Command Code (Open)",
+
+			// open lane: opencode only injects stored auth for providers with
+			// their own /connect entry; share the key via options.apiKey
+			// resolved at startup (resolves against auth store + CLI auth.json).
+			const userOpenai = existing("command-code-openai");
+			cfg.provider["command-code-openai"] = {
+				npm: userOpenai.options ? undefined : "@ai-sdk/openai-compatible",
+				name: userOpenai.options ? undefined : "Command Code (OpenAI)",
 				options: {
 					baseURL: PROVIDER_BASE,
 					...(openKey ? { apiKey: openKey } : {}),
-					...userOpen.options,
+					...userOpenai.options,
 				},
-				models: { ...openDefs, ...userOpen.models },
+				models: { ...openDefs, ...userOpenai.models },
 			};
 
 			// /cmd-usage command -> agent calls the cmd_usage tool
@@ -161,20 +165,20 @@ export const CommandCodePlugin: Plugin = async (_input) => {
 			cfg.command["cmd-usage"] = {
 				description: "Show Command Code plan, credits, and usage windows",
 				template:
-					"Call the cmd_usage tool and present its markdown output verbatim to the user. If the tool errors, tell the user to run /connect (Command Code) and retry. $ARGUMENTS",
+					"Call the cmd_usage tool and present its markdown output verbatim to the user. If the tool errors, tell the user to run /connect (Command Code (Anthropic)) and retry. $ARGUMENTS",
 			};
 		},
 
 		// opencode >=1.14.49 resolves the model list here, with auth injected.
 		provider: {
-			id: "command-code",
+			id: "command-code-anthropic",
 			models: async (_provider, ctx) => {
 				const key = await resolveKey(async () => {
 					const a = ctx.auth;
 					return a?.type === "api" && a.key ? { key: a.key } : undefined;
 				});
 				const split = await loadModels(key);
-				return toModelDefs(split.claude, "command-code", "@ai-sdk/anthropic");
+				return toModelDefs(split.claude, "command-code-anthropic", "@ai-sdk/anthropic");
 			},
 		},
 
