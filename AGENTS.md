@@ -41,6 +41,8 @@ tui/                cmduse CLI crate (published as `cmd-usage` on crates.io, bin
 ### cmduse architecture
 
 - Watch mode: true in-place redraw. Frame's LAST line has NO trailing newline so cursor parks on it; spinner/countdown rewrite that line in place with `\r\x1b[K`. Redraw does `\x1b[{n}F` (n = prev_lines-1) to jump to frame top. Trailing newline anywhere → cursor drift/scroll-shred in real terminals (invisible in piped captures — always test under `script -q /dev/null`).
+- **Frame-shrink redraw: NEVER write `\n` at bottom row** — it scrolls the screen once per refresh and desyncs the cursor (error frames → 23 repeated headers). Pad `\x1b[2K\r\n` up to old height, then `\x1b[1F` back to new bottom. Keeps bottom anchor fixed. Fixed in 0.1.17.
+- **Transient TLS errors** (`tls connection init failed: unexpected end of file`): api.commandcode.ai drops handshakes intermittently. `api::get` retries up to 5× (1s base, 8s cap, fastrand jitter), 15s per-attempt timeout, transient matcher covers tls/connection/timeout/eof/handshake/certificate. 0.1.16.
 - **stdout lock deadlock**: main thread holds `StdoutLock` for the whole loop; spinner threads must NOT write via `std::io::stdout()` — they block forever on the mutex and `join()` hangs, killing refreshes. Spinner writes to its own `/dev/tty` handle. This bit once; test watch mode under a pty (`script`) or it looks fine in captures.
 - Spinner bug class: `start()` calls `stop()` first (safety), which sets stop_flag=true — MUST reset flag to false before spawning or thread exits instantly (zero frames, no error).
 - Statusline: template engine in report_render.rs. Placeholders `{plan} {credits} {cap} {credits_bar} {5h_bar} {5h_pct} {5h_used} {5h_cap} {wk_bar} {wk_pct} {wk_used} {wk_cap}`. Unknown placeholders dropped, unclosed brace passes through, multi-line OK, `sl_colors=false` strips ANSI post-render, `sl_ascii=true` swaps ━╱ for #-.
@@ -59,7 +61,7 @@ tui/                cmduse CLI crate (published as `cmd-usage` on crates.io, bin
 ### Publishing workflow (NEVER publish without explicit user go)
 
 - crates.io: `cargo publish` in `tui/`. Requires clean git tree (commit first, including Cargo.lock — publish refuses dirty).
-- Version discipline: 0.x line. Current: 0.1.10. History was re-shipped 0.1.3–0.1.8 from feature commits (temp git worktree at /tmp, version bumped, published); 0.2.0–0.4.0 yanked (crates.io can NEVER delete versions — yank only hides from resolution).
+- Version discipline: 0.x line. Current: 0.1.17. History was re-shipped 0.1.3–0.1.8 from feature commits (temp git worktree at /tmp, version bumped, published); 0.2.0–0.4.0 yanked (crates.io can NEVER delete versions — yank only hides from resolution).
 - crates.io API download URL 403s brew's UA — Homebrew formulas must use `https://static.crates.io/crates/<name>/<name>-<ver>.crate`.
 - Homebrew tap: repo `JeffreyJYZ/homebrew-tap`, `Formula/cmduse.rb`. On every release: bump version, url, sha256 (`curl -sL https://static.crates.io/crates/cmd-usage/cmd-usage-<v>.crate | shasum -a 256`).
 - README updates with EVERY user-facing change. Always.
