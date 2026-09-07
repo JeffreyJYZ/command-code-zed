@@ -78,3 +78,33 @@ tui/                cmduse CLI crate (published as `cmd-usage` on crates.io, bin
 - env::var("HOME") returns PathBuf-able string but `"...".into()` needs type annotation when chaining `.join()`.
 - clippy in CI runs with `-D warnings`: `Result::map_err(|e| e)` identity, large Err closures (box or restructure to String), while_let_on_iterator, match_result_ok — fix, don't allow.
 - ccusage-style local reports are complements, not replacements: local JSONL = per-model/per-project detail (CLI sessions only); API = account truth (all harnesses, but totals only).
+
+# User Rules
+
+- Always update AGENTS.md and README.md for each change you make.
+- Always learn from the user when the user says explicit preferences, and note them in a "User Preferences" section in AGENTS.md.
+- Always read a file before editing it
+
+# User Preferences
+
+- TS formatting: Biome (biome.json at repo root, scope = opencode/**). Tab indent, width 4, lineWidth 100. `noExplicitAny` stays error (default) — don't relax. `noNonNullAssertion` off (scrape script needs it). Never add config options matching defaults.
+- Use `rg`, never grep. pnpm/bun over npm. Homebrew for global apps.
+- Root causes, not temporary fixes. No excess config options matching defaults.
+- NEVER publish/push/release without explicit go.
+
+## opencode plugin (opencode/)
+
+- Package `opencode-command-code` (npm later; never publish without go). Build: `bun run build` (bun build + tsc d.ts), test: `bun test` (26 tests), typecheck: `bun run typecheck`.
+- Model list: LIVE from `GET /provider/v1/models` (OpenAI shape, Bearer key) — endpoint is PUBLIC in docs (commandcode.ai/docs/provider), returns id/name/context_length. Claude models → Anthropic wire `/provider/v1/messages`, everything else → OpenAI wire `/provider/v1/chat/completions`; wrong lane = 400. So plugin registers TWO providers: `command-code` (@ai-sdk/anthropic, claude ids only) + `command-code-open` (@ai-sdk/openai-compatible, rest).
+- Plan gating: extract-gating.ts scrapes installed CLI bundle (cli.mjs) → src/gating.ts (MODEL_CATEGORIES, PLAN_RULES, KNOWN_MODELS, MODEL_ALIASES, canonicalizeModelId). Regen: `bun run extract`. Anchors are minified var names (Fr/Ur/Sr/wr) — they shift between CLI releases.
+- Gating evaluation (src/access.ts): purchased/free credits > 0 → all allowed; unknown plan → allow; category from exact id, else longest-prefix sibling ("claude-fable-5-1" → "claude-fable-5" → premium); else default-allow (API enforces real gate). No stem fallback — that mis-categorized muse-spark-1.3 as premium by matching the shorter muse-spark-1.1 sibling.
+- Empirical model access reality (probed Sept 2026, GOAT plan): muse-spark-1.1 + gemini-3.5/3.6/3.5-lite/3.1-lite = 403 MODEL_NOT_IN_PLAN (not in CLI's category table; hardcoded in HARD_BLOCKED). gpt-5.6-luna sometimes returns transient 403 on first call (cold upstream key) then 200 — let it pass, do not block.
+- Model id quirks: case-insensitive canonicalization; aliases (claude-opus-4-6→4-7); date suffixes stripped. Models.dev-style slash ids (z-ai/glm-5.3-flash) work as opencode model ids.
+- Auth: plugin auth hook (type api) validates via /alpha/whoami → stored in ~/.local/share/opencode/auth.json. resolveKey order: CMD_API_KEY → opencode auth store (TODO: wire client.auth) → ~/.commandcode/auth.json.
+- Model list stamped at config-hook time (startup); new models appear after restart (ponytail).
+- Smoke test: add `"file:///tmp/opencode-smoke/src/index.ts"` to ~/.config/opencode/opencode.json plugin array; `opencode run --model command-code/z-ai/glm-5.3-flash "hi" --print-logs` shows real errors (share subscriber ERROR line carries the cause).
+- **Config-hook models DO surface in `opencode models` (v1.18.29) — but only if the plugin actually loads.** Debug chain that wasted an hour: (1) user's manual `command-code` entry in ~/.config/opencode/opencode.jsonc clobbered/merged with plugin output — its 2 models masked the bug; (2) file:// plugin entry with relative `./api` imports loads NOTHING silently (no log line) — plugin must be ONE self-contained module or live in `~/.config/opencode/plugins/` with deps resolvable from `~/.config/opencode/node_modules`; (3) bundled dist/index.js copied to `~/.config/opencode/plugins/command-code.js` works (bun bundle inlines src/, keeps @opencode-ai/plugin external).
+- **Merge, don't clobber, user provider config**: config hook spreads `{...claudeDefs, ...userCc.models}` and preserves user `options` (user's jsonc entry has reasoning variants + modalities). User's 2 models must survive.
+- **command-code-open needs explicit `options.apiKey`**: opencode only injects stored auth for providers with their OWN /connect entry; the open lane shares command-code's key → inject at config time via resolveKey (docs-sanctioned options.apiKey).
+- Provider hook (`provider.models`, ≥1.14.49 path) present but unverified — config-hook path confirmed working; auth `loader` added following omniroute plugin precedent (dist/src/plugin.js in ~/.cache/opencode/packages/opencode-omniroute-auth@latest — best working reference for plugin provider/auth patterns).
+- `/alpha/usage/summary` successRate is 0–100 (not 0–1) — render raw with `{:.0}%`.

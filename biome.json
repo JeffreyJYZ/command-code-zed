@@ -1,0 +1,17 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.11/schema.json",
+	"files": {
+		"includes": ["opencode/src/**/*.ts", "opencode/test/**/*.ts", "opencode/scripts/**/*.ts"]
+	},
+	"formatter": {
+		"indentStyle": "tab",
+		"lineWidth": 100
+	},
+	"linter": {
+		"rules": {
+			"style": {
+				"noNonNullAssertion": "off"
+			}
+		}
+	}
+}
