@@ -74,7 +74,9 @@ export const CommandCodePlugin: Plugin = async (_input) => {
 			loader: async (getAuth) => {
 				const auth = await getAuth();
 				if (auth?.type !== "api") {
-					throw new Error("No API key available. Please run '/connect' and choose Command Code (Anthropic).");
+					throw new Error(
+						"No API key available. Please run '/connect' and choose Command Code (Anthropic).",
+					);
 				}
 				return { apiKey: auth.key, baseURL: PROVIDER_BASE };
 			},
@@ -104,11 +106,9 @@ export const CommandCodePlugin: Plugin = async (_input) => {
 			],
 		},
 
-		// Register the Claude and OpenAI-compatible lanes. The `command-code`
-		// provider id is left entirely to the user's opencode.json(c) entry —
-		// the plugin never touches it, so the two provider ids this plugin
-		// owns are guaranteed not to collide. Merges non-destructively with
-		// any user-defined entries for the same ids.
+		// Register the Claude and OpenAI-compatible lanes. The two provider
+		// ids this plugin owns (`command-code-anthropic`, `command-code-openai`)
+		// are set here; user-defined entries for the same ids are preserved.
 		config: async (cfg) => {
 			cfg.provider ??= {};
 

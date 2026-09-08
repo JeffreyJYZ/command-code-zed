@@ -58,10 +58,24 @@ pub fn parse_args() -> Args {
             "--json" => a.json = true,
             "--local" => a.local = true,
             "-i" | "--interval" => {
-                a.interval = it.next().and_then(|v| v.parse().ok());
+                let v = it.next().expect("interval needs a value");
+                match v.parse::<u64>() {
+                    Ok(n) if (1..=86_400).contains(&n) => a.interval = Some(n),
+                    _ => {
+                        eprintln!("-i needs a number 1–86400 (got '{v}')");
+                        std::process::exit(2);
+                    }
+                }
             }
             "-w" | "--bar-width" => {
-                a.bar_width = it.next().and_then(|v| v.parse().ok());
+                let v = it.next().expect("bar-width needs a value");
+                match v.parse::<usize>() {
+                    Ok(n) if (5..=200).contains(&n) => a.bar_width = Some(n),
+                    _ => {
+                        eprintln!("-w needs a number 5–200 (got '{v}')");
+                        std::process::exit(2);
+                    }
+                }
             }
             "--days" | "--last" | "-l" => match it.next().and_then(|v| v.parse::<usize>().ok()) {
                 Some(n) => a.last = Some(n.clamp(1, 365)),

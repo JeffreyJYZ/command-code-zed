@@ -113,29 +113,8 @@ pub fn rel_time(reset_at: Option<f64>, now: u64) -> String {
     }
 }
 
-/// Parse "2026-09-27T12:23:00.000Z" → epoch ms.
-pub fn parse_iso_utc(s: &str) -> Option<f64> {
-    let (date, rest) = s.split_once('T')?;
-    let rest = rest.trim_end_matches('Z');
-    let mut dp = date.split('-');
-    let y: i64 = dp.next()?.parse().ok()?;
-    let mo: i64 = dp.next()?.parse().ok()?;
-    let d: i64 = dp.next()?.parse().ok()?;
-    // days since epoch via civil-from-days algorithm (Howard Hinnant)
-    let y = if mo <= 2 { y - 1 } else { y };
-    let era = if y >= 0 { y } else { y - 399 } / 400;
-    let yoe = y - era * 400;
-    let mp = (mo + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146097 + doe - 719468;
-    let secs = days * 86400;
-    let mut hp = rest.split(':');
-    let h: i64 = hp.next().unwrap_or("0").parse().ok()?;
-    let mi: i64 = hp.next().unwrap_or("0").parse().ok()?;
-    let sec: f64 = hp.next().unwrap_or("0").parse().ok()?;
-    Some((secs + h * 3600 + mi * 60) as f64 * 1000.0 + sec * 1000.0)
-}
+// date/ISO helpers live in dates.rs; re-export here (tests + render use it)
+pub use crate::dates::parse_iso_utc;
 
 /// Elapsed % of a rolling window: window length = dur_secs, ends at reset_at.
 pub fn elapsed_pct(reset_at: Option<f64>, dur_secs: u64, now: u64) -> Option<u8> {

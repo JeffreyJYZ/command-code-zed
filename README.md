@@ -21,22 +21,22 @@ npm i -g @jeffreyjyz/opencode-command-code
 }
 ```
 
-Restart opencode. `/connect` → **Command Code** → paste your API key (or set `CMD_API_KEY`, or have `cmd login` done — the plugin reads that too).
+Restart opencode. `/connect` → **Command Code (Anthropic)** → paste your API key (or set `CMD_API_KEY`, or have `cmd login` done — the plugin reads that too).
 
 What you get:
 
-- **Two providers**: `command-code` (Claude models, Anthropic Messages wire) and `command-code-open` (everything else, OpenAI wire) — the API rejects the wrong wire per model, so the plugin splits them.
+- **Two providers**: `command-code-anthropic` (Claude models, Anthropic Messages wire) and `command-code-openai` (everything else, OpenAI wire) — the API rejects the wrong wire per model, so the plugin splits them.
 - **Live model list** from `GET /provider/v1/models`, filtered by your plan (go/goat = open models only, pro = no opus/fable, max/ultra/provider = everything, purchased credits = everything). Gating tables are extracted from the Command Code CLI bundle (`bun run extract` regenerates after CLI updates).
 - **`cmd_usage` tool** — plan, credits, 5-hour/weekly windows, billing-period summary. `/cmd-usage` tells the agent to call it; `/cmd-usage plans` renders the plan comparison table.
 
-Existing manual `command-code` provider config in `opencode.json(c)` is merged, not replaced — your model overrides and options win.
+Existing manual `command-code-anthropic` / `command-code-openai` provider config in `opencode.json(c)` is merged, not replaced — your model overrides and options win.
 
 ## Development
 
 ```sh
 cd opencode
 bun run build      # bundle + d.ts
-bun test           # 26 tests
+bun test           # 29 tests
 bun run typecheck  # tsc --noEmit
 bun run extract    # regen gating tables from installed CLI bundle
 ```

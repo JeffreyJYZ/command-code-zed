@@ -1,3 +1,5 @@
+use crate::api;
+use crate::dates::{day_shift, iso_hour_start, hour_label, parse_iso_utc, today_utc};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -152,94 +154,8 @@ pub fn load_local() -> LocalData {
 // from that instant to now. Per-day usage = cum(day start) - cum(next day
 // start).
 
-#[derive(Deserialize)]
-struct ApiSummary {
-    #[serde(default, rename = "totalCount")]
-    total_count: u64,
-    #[serde(default, rename = "totalCost")]
-    total_cost: f64,
-    #[serde(default, rename = "totalTokensIn")]
-    total_tokens_in: u64,
-    #[serde(default, rename = "totalTokensOut")]
-    total_tokens_out: u64,
-}
-
 fn iso_day_start(day: &str) -> String {
     format!("{day}T00:00:00.000Z")
-}
-
-fn fetch_cumulative(since: &str, key: &str) -> Result<ApiSummary, String> {
-    let url = format!("https://api.commandcode.ai/alpha/usage/summary?since={since}");
-    let get = || -> Result<ureq::Response, String> {
-        ureq::get(&url)
-            .set("Authorization", &format!("Bearer {key}"))
-            .timeout(std::time::Duration::from_secs(15))
-            .call()
-            .map_err(|e| e.to_string())
-    };
-    // one retry on transient connection failures (box the big ureq error)
-    let resp = match get() {
-        Ok(r) => r,
-        Err(e) => {
-            // one retry on transient connection failures
-            get().map_err(|e2| format!("summary since={since}: {e} / {e2}"))?
-        }
-    };
-    let mut buf = Vec::new();
-    use std::io::Read;
-    resp.into_reader()
-        .take(1 << 20)
-        .read_to_end(&mut buf)
-        .map_err(|e| e.to_string())?;
-    serde_json::from_slice(&buf).map_err(|e| format!("summary parse: {e}"))
-}
-
-/// today as UTC YYYY-MM-DD (no chrono; days-since-epoch → civil date)
-pub fn today_utc() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let days = secs / 86400;
-    // Howard Hinnant civil_from_days
-    let z = days as i64 + 719_468;
-    let era = z / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    format!("{y:04}-{m:02}-{d:02}")
-}
-
-/// shift YYYY-MM-DD by n days (UTC)
-pub fn day_shift(day: &str, n: i64) -> Option<String> {
-    let mut p = day.split('-');
-    let y: i64 = p.next()?.parse().ok()?;
-    let m: i64 = p.next()?.parse().ok()?;
-    let d: i64 = p.next()?.parse().ok()?;
-    let y2 = if m <= 2 { y - 1 } else { y };
-    let era = y2.div_euclid(400);
-    let yoe = y2 - era * 400;
-    let mp = (m + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468 + n;
-    // back to civil
-    let z = days + 719_468;
-    let era = z / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    Some(format!("{y:04}-{m:02}-{d:02}"))
 }
 
 /// Fetch `f(day)` for many days with bounded concurrency.
@@ -247,10 +163,10 @@ pub fn day_shift(day: &str, n: i64) -> Option<String> {
 fn bounded_fetch(
     starts: &[String],
     key: &str,
-    f: fn(&str, &str) -> Result<ApiSummary, String>,
-) -> Result<Vec<(String, ApiSummary)>, String> {
+    f: fn(&str, &str) -> Result<api::UsageSummary, String>,
+) -> Result<Vec<(String, api::UsageSummary)>, String> {
     const POOL: usize = 8;
-    let mut out: Vec<(String, ApiSummary)> = Vec::new();
+    let mut out: Vec<(String, api::UsageSummary)> = Vec::new();
     for chunk in starts.chunks(POOL) {
         let handles: Vec<_> = chunk
             .iter()
@@ -279,7 +195,7 @@ pub fn load_account_daily(days: usize, key: &str) -> Result<ByDay, String> {
         .filter_map(|i| day_shift(&today, -(i as i64)))
         .collect();
 
-    let mut cums = bounded_fetch(&starts, key, fetch_cumulative)?;
+    let mut cums = bounded_fetch(&starts, key, api::summary_since)?;
     // sort oldest → newest
     cums.sort_by(|a, b| a.0.cmp(&b.0));
 
@@ -346,42 +262,6 @@ fn now_epoch() -> u64 {
         .unwrap_or(0)
 }
 
-/// hour start epoch → ISO with ms
-fn iso_hour_start(epoch: u64) -> String {
-    let hour_start = epoch - epoch % 3600;
-    // civil from epoch (reuse day logic inline)
-    let days = hour_start / 86400;
-    let secs_of_day = hour_start % 86400;
-    let h = secs_of_day / 3600;
-    let m = (secs_of_day % 3600) / 60;
-    let s = secs_of_day % 60;
-    // reuse day_shift's civil math by constructing date from days-since-epoch
-    let date = civil_from_days(days as i64);
-    format!("{date}T{h:02}:{m:02}:{s:02}.000Z")
-}
-
-fn civil_from_days(days: i64) -> String {
-    let z = days + 719_468;
-    let era = z / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    format!("{y:04}-{m:02}-{d:02}")
-}
-
-/// label for an hour bucket: "MM-DD HH:00"
-fn hour_label(epoch: u64) -> String {
-    let hour_start = epoch - epoch % 3600;
-    let days = hour_start / 86400;
-    let h = (hour_start % 86400) / 3600;
-    format!("{} {h:02}:00", &civil_from_days(days as i64)[5..])
-}
-
 /// Account-wide usage for the last `hours` hours, one row per hour bucket
 /// (oldest first, current hour last). Includes all harnesses.
 pub fn load_account_hourly(hours: usize, key: &str) -> Result<Vec<(String, Totals)>, String> {
@@ -395,14 +275,14 @@ pub fn load_account_hourly(hours: usize, key: &str) -> Result<Vec<(String, Total
         .collect();
 
     // bounded 8-way pool (same as daily)
-    let mut cums: Vec<ApiSummary> = Vec::new();
+    let mut cums: Vec<api::UsageSummary> = Vec::new();
     for chunk in bounds.chunks(8) {
         let handles: Vec<_> = chunk
             .iter()
             .map(|&b| {
                 let s = iso_hour_start(b);
                 let k = key.to_string();
-                std::thread::spawn(move || fetch_cumulative(&s, &k))
+                std::thread::spawn(move || api::summary_since(&s, &k))
             })
             .collect();
         for h in handles {
@@ -457,7 +337,7 @@ pub fn load_local_hourly(hours: usize) -> Vec<(String, Totals)> {
 
     // timestamp ISO → hour bucket index
     let bucket_of = |ts: &str| -> Option<u64> {
-        let ms: f64 = parse_iso_epoch_ms(ts)?;
+        let ms: f64 = parse_iso_utc(ts)?;
         let s = (ms / 1000.0) as u64;
         let h = s - s % 3600;
         (h >= oldest).then_some(h)
@@ -504,26 +384,4 @@ pub fn load_local_hourly(hours: usize) -> Vec<(String, Totals)> {
             (hour_label(h), by_hour.get(&h).copied().unwrap_or_default())
         })
         .collect()
-}
-
-/// ISO timestamp string → epoch ms (local parse of "…Z")
-fn parse_iso_epoch_ms(ts: &str) -> Option<f64> {
-    let (date, rest) = ts.split_once('T')?;
-    let rest = rest.trim_end_matches('Z');
-    let mut dp = date.split('-');
-    let y: i64 = dp.next()?.parse().ok()?;
-    let mo: i64 = dp.next()?.parse().ok()?;
-    let d: i64 = dp.next()?.parse().ok()?;
-    let y2 = if mo <= 2 { y - 1 } else { y };
-    let era = y2 / 400;
-    let yoe = y2 - era * 400;
-    let mp = (mo + 9) % 12;
-    let doy = (153 * mp + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    let mut hp = rest.split(':');
-    let h: i64 = hp.next().unwrap_or("0").parse().ok()?;
-    let mi: i64 = hp.next().unwrap_or("0").parse().ok()?;
-    let sec: f64 = hp.next().unwrap_or("0").parse().ok()?;
-    Some((days * 86400 + h * 3600 + mi * 60) as f64 * 1000.0 + sec * 1000.0)
 }

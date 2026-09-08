@@ -312,10 +312,12 @@ fn plans_table(current: &str) -> String {
         ("max-20", "Max 20x", "$200", "$300", "$90", "$180"),
         ("team-pro", "Team Pro", "$40", "$40", "$12", "$24"),
     ];
-    let cur = current.to_lowercase();
+    // Mark by exact plan_name match (not substring): "individual-goat"
+    // contains "go", so substring matching double-marks the Go row.
+    let mine = plan_name(current);
     let mut out = String::from("| Plan | Price | Credits/mo | 5-hour | Weekly |\n|---|---|---|---|---|\n");
-    for (id, name, price, monthly, h5, wk) in plans {
-        let mark = if cur.contains(id) { "**" } else { "" };
+    for (_id, name, price, monthly, h5, wk) in plans {
+        let mark = if name == mine { "**" } else { "" };
         out.push_str(&format!(
             "| {mark}{name}{mark} | {price}/mo | {monthly} | {h5} | {wk} |\n"
         ));

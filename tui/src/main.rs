@@ -2,6 +2,7 @@ mod api;
 mod cli;
 mod update_check;
 mod config;
+mod dates;
 mod render;
 mod report_render;
 mod reports;
@@ -22,7 +23,6 @@ const RESET: &str = "\x1b[0m";
 const DIM: &str = "\x1b[2m";
 
 fn main() {
-    update_check::check();
     let args = cli::parse_args();
     if args.help {
         cli::usage();
@@ -126,6 +126,13 @@ fn main() {
         return;
     }
 
+    // Watch mode: check update BEFORE first frame draw. check_sync() blocks
+    // once per day (≤5s); async eprintln here could land mid-redraw and tear
+    // the in-place frame.
+    if let Some(msg) = update_check::check_sync() {
+        eprintln!("{msg}");
+    }
+
     // live mode: true in-place redraw. Frame's last line = status line,
     // drawn WITHOUT trailing newline so the cursor stays on it. Spinner
     // and countdown rewrite that line in place. No scroll, no drift.
@@ -135,7 +142,7 @@ fn main() {
     let mut history: Vec<f64> = Vec::new(); // deltas, $ per refresh
     let mut history_used: Vec<f64> = Vec::new(); // raw cumulative 5h spend
     loop {
-        let s = snapshot::snapshot_with_spinner(prev_lines > 0);
+        let s = snapshot::snapshot();
         // track 5-hour spend DELTA between refreshes — cumulative spend is
         // monotonic (sparkline of it is all-full); deltas show burst vs idle
         let used = s
@@ -209,7 +216,7 @@ fn main() {
 
 fn statusline_cmd(args: &cli::Args) {
     let cfg = config::load();
-    let s = snapshot::snapshot_with_spinner(true);
+    let s = snapshot::snapshot();
     let plan = render::plan_name(&s.sub.plan_id);
     let cap = render::plan_monthly_cap(&s.sub.plan_id).unwrap_or(0.0);
     if let Some(e) = &s.err {

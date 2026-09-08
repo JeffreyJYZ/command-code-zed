@@ -98,10 +98,12 @@ export function plansTable(current: string): string {
 		["max-20", "Max 20x", "$200", "$300", "$90", "$180"],
 		["team-pro", "Team Pro", "$40", "$40", "$12", "$24"],
 	];
-	const cur = current.toLowerCase();
+	// Mark by exact plan_name match (not substring): "individual-goat"
+	// contains "go", so substring matching double-marks the Go row.
+	const mine = planName(current);
 	let out = "| Plan | Price | Credits/mo | 5-hour | Weekly |\n|---|---|---|---|---|\n";
-	for (const [id, name, price, monthly, h5, wk] of plans) {
-		const mark = cur.includes(id) ? "**" : "";
+	for (const [_id, name, price, monthly, h5, wk] of plans) {
+		const mark = name === mine ? "**" : "";
 		out += `| ${mark}${name}${mark} | ${price}/mo | ${monthly} | ${h5} | ${wk} |\n`;
 	}
 	out +=

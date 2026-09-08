@@ -129,7 +129,11 @@ fn get(path: &str, key: &str) -> Result<Vec<u8>, String> {
                     || err_str.contains("broken pipe")
                     || err_str.contains("eof")
                     || err_str.contains("handshake")
-                    || err_str.contains("certificate");
+                    || err_str.contains("certificate")
+                    // HTTP 429 (rate limit) and 5xx (server/upstream blip)
+                    // are retried; 4xx client errors are not.
+                    || err_str.contains("status code 429")
+                    || err_str.contains("status code 5");
                 if !is_transient || attempt == MAX_RETRIES {
                     break;
                 }
@@ -166,4 +170,11 @@ pub fn credits(key: &str) -> Result<CreditsResp, String> {
 pub fn summary(key: &str) -> Result<UsageSummary, String> {
     serde_json::from_slice(&get("/alpha/usage/summary", key)?)
         .map_err(|e| format!("summary: {e}"))
+}
+
+/// Fetch `/alpha/usage/summary?since=<ISO>` and return parsed summary.
+/// Retries on transient errors (uses same logic as `get`).
+pub fn summary_since(since: &str, key: &str) -> Result<UsageSummary, String> {
+    serde_json::from_slice(&get(&format!("/alpha/usage/summary?since={since}"), key)?)
+        .map_err(|e| format!("summary since={since}: {e}"))
 }

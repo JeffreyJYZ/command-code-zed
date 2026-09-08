@@ -7,16 +7,6 @@ const CYAN: &str = "\x1b[36m";
 const RESET: &str = "\x1b[0m";
 
 pub fn snapshot() -> Snapshot {
-    fetch(true)
-}
-
-/// Watch-mode refresh: spinner animates while fetching, disappears when done.
-pub fn snapshot_with_spinner(_spinner: bool) -> Snapshot {
-    fetch(true)
-}
-
-fn fetch(_show_spinner: bool) -> Snapshot {
-
     let mut s = empty_snapshot();
 
     let key = match api::api_key() {
