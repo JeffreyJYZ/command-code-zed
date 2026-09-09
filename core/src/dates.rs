@@ -38,16 +38,11 @@ pub fn parse_iso_utc(s: &str) -> Option<f64> {
 
 /// "+05:00" / "-07:30" → seconds east of UTC. Minutes part optional.
 fn parse_offset(s: &str) -> Option<i64> {
-    let (sign, rest) = if let Some(t) = s.strip_prefix('-') {
-        (-1i64, t)
-    } else if let Some(t) = s.strip_prefix('+') {
-        (1i64, t)
-    } else {
-        return None;
-    };
+    let rest = s.strip_prefix(['-', '+'])?;
     if rest.is_empty() {
         return None;
     }
+    let sign = if s.starts_with('-') { -1i64 } else { 1i64 };
     let (h, m) = match rest.split_once(':') {
         Some((h, m)) => (h.parse::<i64>().ok()?, m.parse::<i64>().ok()?),
         None if rest.len() == 4 => {
