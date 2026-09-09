@@ -1,6 +1,6 @@
 [package]
 name = "cmd-usage"
-version = "0.5.4"
+version = "0.5.5"
 edition = "2021"
 description = "Live Command Code (commandcode.ai) usage dashboard: credits, 5-hour and weekly windows, plan limits. Watch mode or one-shot."
 license = "MIT"
@@ -14,7 +14,7 @@ name = "cmduse"
 path = "src/main.rs"
 
 [dependencies]
-cmduse-core = { path = "../core", version = "0.5.4" }
+cmduse-core = { path = "../core", version = "0.5.5" }
 ureq = { version = "2", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
