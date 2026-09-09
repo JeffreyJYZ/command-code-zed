@@ -43,11 +43,22 @@ cmduse hourly --hours 6      # account usage by hour (default 24, max 168)
 cmduse hourly --local        # hourly from local CLI logs (offline)
 cmduse model                 # local usage by model
 cmduse session               # local usage by project
+cmduse models                # live model list from the Command Code API
 cmduse statusline            # compact one-liner for prompts/tmux
 cmduse daily --json          # JSON output (daily, hourly, model, session, statusline)
 ```
 
 Burn-rate: windows show `on pace to hit cap in …` when the current spend rate projects hitting the cap before the window resets, and only once the window is ≥10% elapsed (flat-rate projection is unreliable early). ponytail: assumes flat spend rate; bursty sessions shift the ETA.
+
+Watch mode: a `spend bursts (N samples)` sparkline shows $ spent per refresh.
+It is on by default, hidden while idle (all-zero deltas), and its sample count
+is configurable — the trend also survives restarts:
+
+```sh
+cmduse config set burst_on=false      # turn the sparkline off
+cmduse config set burst=80            # 80 samples (5–240)
+cmduse -b 120                         # same for one run
+```
 
 ## Statusline
 
