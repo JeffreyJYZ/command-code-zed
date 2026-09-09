@@ -21,7 +21,7 @@ mod main_tests;
 
 use std::io::Write;
 
-use crate::render::{DIM, RESET};
+use crate::render::{BOLD, DIM, RESET};
 
 fn main() {
     let args = cli::parse_args();
@@ -154,19 +154,14 @@ fn main() {
         eprintln!("{msg}");
     }
 
-    // In-place redraw needs a window the frame fits in. Below the minimum the
-    // cursor math can't hold: a frame taller than the terminal scrolls every
-    // refresh (shred). Refuse cleanly instead of garbling the screen.
-    if let Some((rows, cols)) = term_size() {
-        if rows < 16 || cols < 40 {
-            eprintln!("cmduse: window too small for the dashboard — need ≥40 cols × 16 rows (got {cols}×{rows}). Run with -1 for a one-shot, or resize.");
-            std::process::exit(0);
-        }
-    }
-
     // live mode: true in-place redraw. Frame's last line = status line,
     // drawn WITHOUT trailing newline so the cursor stays on it. Spinner
     // and countdown rewrite that line in place. No scroll, no drift.
+    //
+    // Terminal size is re-queried every refresh: on a window too small for
+    // the full dashboard we swap to a compact single-line frame instead of
+    // exiting, so shrinking/widening mid-run follows live (term_size is NOT
+    // cached).
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     let mut prev_lines = 0usize;
@@ -176,6 +171,10 @@ fn main() {
     let mut history_used: Vec<f64> = Vec::new(); // raw cumulative 5h spend
     loop {
         let s = snapshot::snapshot();
+        let (rows, cols) = term_size().unwrap_or((0, 0));
+        // <8x4 is not a usable dashboard even in compact form: keep drawing
+        // the compact line anyway (clip keeps it stable), no hard exit.
+        let compact = cols > 0 && (rows < 16 || cols < 40);
         // track 5-hour spend DELTA between refreshes — cumulative spend is
         // monotonic (sparkline of it is all-full); deltas show burst vs idle
         let used = s
@@ -201,15 +200,16 @@ fn main() {
             // persist on every refresh: tiny file, keeps the trend across runs.
             let _ = save_trend(&history);
         }
-        let text = if args.plain {
+        let text = if compact {
+            compact_dashboard(&s)
+        } else if args.plain {
             render::render_plain(&s, bar_width)
         } else {
             render::render(&s, bar_width)
         };
-        let spark = if burst_on
-            && history.len() >= 2
-            && history.iter().any(|v| *v > 0.0)
-        {
+        let spark = if compact || !burst_on {
+            String::new()
+        } else if history.len() >= 2 && history.iter().any(|v| *v > 0.0) {
             format!("{DIM}spend bursts ({}s samples){RESET} {}\n", interval, render::sparkline(&history))
         } else {
             String::new() // idle (all-zero deltas) → no row, no flat-line noise
@@ -218,7 +218,7 @@ fn main() {
             "{DIM}refreshing every {interval}s · ctrl-c to quit{RESET}"
         );
         let frame = format!("{text}{spark}{status_line}");
-        prev_lines = redraw_frame(&mut out, &frame, prev_lines, term_cols());
+        prev_lines = redraw_frame(&mut out, &frame, prev_lines, (cols > 0).then_some(cols));
         out.flush().ok();
         // countdown: rewrite just the status line each second (cursor already on it)
         for remaining in (1..interval).rev() {
@@ -226,10 +226,33 @@ fn main() {
             let msg = format!(
                 "\r\x1b[2K{DIM}refreshing every {interval}s · next refresh in {remaining}s · ctrl-c to quit{RESET}"
             );
-            write!(out, "{}", clip_to_width(&msg, term_cols())).ok();
+            write!(out, "{}", clip_to_width(&msg, (cols > 0).then_some(cols))).ok();
             out.flush().ok();
         }
     }
+}
+
+/// Minimal one-line dashboard for windows too small for the full frame:
+/// plan + remaining monthly credits (clip handles the rest). Stays stable
+/// where the full 14-row dashboard would scroll every refresh.
+fn compact_dashboard(s: &crate::render::Snapshot) -> String {
+    use crate::render::plan_name;
+    let cap = cmduse_core::plan_monthly_cap(&s.sub.plan_id);
+    let cap_txt = cap.map(cmduse_core::money).unwrap_or_else(|| "-".into());
+    let rem_txt = cmduse_core::money(s.credits.credits.monthly_credits);
+    let h5 = s
+        .credits
+        .window_limits
+        .five_hour
+        .as_ref()
+        .map(|w| cmduse_core::money(w.used))
+        .unwrap_or_else(|| "-".into());
+    let status = if s.sub.status.is_empty() {
+        String::new()
+    } else {
+        format!(" · {}", s.sub.status)
+    };
+    format!("{BOLD}{}{RESET} {rem_txt}/{cap_txt} · 5h {h5}{status}\n", plan_name(&s.sub.plan_id))
 }
 
 /// Spend-burst delta history is persisted to ~/.cache/cmd-usage/trend.json so
@@ -254,27 +277,22 @@ fn save_trend(history: &[f64]) -> std::io::Result<()> {
 
 /// Terminal (rows, cols) from `stty size`. None when not a tty or the probe
 /// fails — redraw then skips clipping (safe: non-tty can't wrap).
+/// Deliberately UNcached: the watch loop re-queries every refresh so resizing
+/// mid-run switches between the full and compact dashboards live.
 fn term_size() -> Option<(usize, usize)> {
-    static SIZE: std::sync::OnceLock<Option<(usize, usize)>> = std::sync::OnceLock::new();
-    *SIZE.get_or_init(|| {
-        let out = std::process::Command::new("sh")
-            .arg("-c")
-            .arg("stty size < /dev/tty")
-            .output()
-            .ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        let text = String::from_utf8_lossy(&out.stdout);
-        let mut it = text.split_whitespace();
-        let rows = it.next()?.parse().ok()?;
-        let cols = it.next()?.parse().ok()?;
-        Some((rows, cols))
-    })
-}
-
-fn term_cols() -> Option<usize> {
-    term_size().map(|(_, cols)| cols)
+    let out = std::process::Command::new("sh")
+        .arg("-c")
+        .arg("stty size < /dev/tty")
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut it = text.split_whitespace();
+    let rows = it.next()?.parse().ok()?;
+    let cols = it.next()?.parse().ok()?;
+    Some((rows, cols))
 }
 
 /// Keep a frame line from auto-wrapping: count visible columns ignoring SGR

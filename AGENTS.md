@@ -2,7 +2,7 @@
 
 Workspace: cmduse-core + cmd-usage CLI + Zed extension + opencode plugin,
 single source of shared logic. The 0.1.x tree (pre-workspace) is archived in
-`legacy/v0.1/` — NEVER edit it; it only exists as history. Release line 0.5.3
+`legacy/v0.1/` — NEVER edit it; it only exists as history. Release line 0.5.4
 (0.2–0.4 slots are yanked-forever on crates.io from the old crate).
 
 ## Layout
@@ -49,7 +49,7 @@ cd opencode && bun test && bun run typecheck   # plugin unchanged
   `version` must already exist on crates.io for `cmd-usage` publish to work.
 - **crates.io version slots are FOREVER.** 0.2.0–0.4.0 were published+yanked
   on old `cmd-usage` — you can never re-upload those numbers. Current 0.x
-  release line is 0.5.3 (first free slot past the dead 0.2–0.4 range). Skip
+  release line is 0.5.4 (first free slot past the dead 0.2–0.4 range). Skip
   taken numbers, never fight the 400.
 - Clean tree required (commit first, incl. Cargo.lock). Zed ext has NO
   release channel (local dev-install only).
