@@ -1,6 +1,6 @@
 id = "command-code-usage"
 name = "Command Code Usage"
-version = "0.2.0"
+version = "0.2.1"
 schema_version = 1
 authors = ["Jeffrey JYZ"]
 description = "Live Command Code plan & usage dashboard: credits, 5-hour and weekly windows, per-plan limits (Go, GOAT, Pro, Max 10x/20x)."

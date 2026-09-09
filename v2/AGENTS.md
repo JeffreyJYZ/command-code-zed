@@ -41,8 +41,11 @@ cd opencode && bun test && bun run typecheck   # plugin unchanged
 ## Publishing (NEVER without explicit user go)
 
 - Order matters: `cmduse-core` first, then `cmd-usage`. `cli/Cargo.toml` dep
-  is `{ path = "../core", version = "0.2.0" }` — path resolves locally, the
+  is `{ path = "../core", version = "0.2.1" }` — path resolves locally, the
   `version` must already exist on crates.io for `cmd-usage` publish to work.
+- **crates.io version slots are FOREVER.** 0.2.0–0.4.0 were published+yanked
+  on old `cmd-usage` — you can never re-upload those numbers. Current 0.2.x
+  release line is 0.2.1; skip taken numbers, never fight the 400.
 - Clean tree required (commit first, incl. Cargo.lock). Zed ext has NO
   release channel (local dev-install only).
 - Homebrew after every cmd-usage release: `JeffreyJYZ/homebrew-tap`,
