@@ -4,6 +4,7 @@ pub struct Args {
     pub once: bool,
     pub plain: bool,
     pub bar_width: Option<usize>,
+    pub bursts: Option<usize>,
     pub help: bool,
     pub config_set: Option<ConfigSet>,
     pub subcmd: Option<SubCmd>,
@@ -20,6 +21,8 @@ pub struct ConfigSet {
     pub sl_template: Option<String>,
     pub sl_colors: Option<bool>,
     pub sl_ascii: Option<bool>,
+    pub bursts: Option<usize>,
+    pub burst_on: Option<bool>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -37,6 +40,7 @@ pub fn parse_args() -> Args {
         once: false,
         plain: false,
         bar_width: None,
+        bursts: None,
         help: false,
         config_set: None,
         subcmd: None,
@@ -73,6 +77,16 @@ pub fn parse_args() -> Args {
                     Ok(n) if (5..=200).contains(&n) => a.bar_width = Some(n),
                     _ => {
                         eprintln!("-w needs a number 5–200 (got '{v}')");
+                        std::process::exit(2);
+                    }
+                }
+            }
+            "-b" | "--bursts" => {
+                let v = it.next().expect("bursts needs a value");
+                match v.parse::<usize>() {
+                    Ok(n) if (5..=240).contains(&n) => a.bursts = Some(n),
+                    _ => {
+                        eprintln!("-b needs a number 5–240 (got '{v}')");
                         std::process::exit(2);
                     }
                 }
@@ -139,8 +153,22 @@ pub fn parse_args() -> Args {
                                         std::process::exit(2);
                                     }
                                 },
+                                "burst" | "bursts" => match v.parse() {
+                                    Ok(n) => cs.bursts = Some(n),
+                                    Err(_) => {
+                                        eprintln!("config: bursts must be a number, got '{v}'");
+                                        std::process::exit(2);
+                                    }
+                                },
+                                "burst_on" | "burst-on" => match v.parse() {
+                                    Ok(b) => cs.burst_on = Some(b),
+                                    Err(_) => {
+                                        eprintln!("config: burst_on must be true/false, got '{v}'");
+                                        std::process::exit(2);
+                                    }
+                                },
                                 other => {
-                                    eprintln!("config: unknown key '{other}' (keys: interval, width, sl, sl_colors, sl_ascii)");
+                                    eprintln!("config: unknown key '{other}' (keys: interval, width, sl, sl_colors, sl_ascii, burst, burst_on)");
                                     std::process::exit(2);
                                 }
                             }
@@ -178,13 +206,15 @@ Usage: cmduse [options]           Live plan dashboard (watch mode)
        cmduse model [--json]      Local usage by model
        cmduse session [--json]    Local usage by project/session
        cmduse statusline          Compact one-liner for prompts/tmux
-       cmduse config set interval=<s> width=<n>
+       cmduse config set interval=<s> width=<n> burst_on=true burst=40
 
 Options:
   -1, --once            Fetch once, print, exit (no watch)
   -p, --plain           No colors / no live redraw (for scripts, pipes)
   -i, --interval <s>    Refresh interval in seconds (default: config or 5)
   -w, --bar-width <n>   Progress bar width in chars (default: config or 20)
+  -b, --bursts <n>      Spend-burst sparkline samples (default: 40; hide when
+                        idle via config burst_on=false)
       --days <n>        daily: number of days back (default 7, max 365)
       --hours <n>       hourly: number of hours back (default 24, max 168)
       --json            Machine-readable JSON output
@@ -193,7 +223,7 @@ Options:
   -h, --help            This help
 
 Config: ~/.config/cmd-usage/config.json
-  { \"interval_secs\": 5, \"bar_width\": 20 }
+  { \"interval_secs\": 5, \"bar_width\": 20, \"burst_samples\": 40 }
 
 daily/model/session read ~/.commandcode/projects offline (no API calls).
 Dashboard needs: logged-in Command Code CLI (~/.commandcode/auth.json)"

@@ -1,7 +1,7 @@
-// ISO date/time helpers — no chrono dependency. All time treated as UTC
-// (no offset parsing) — off by hours at most for the billing window math.
-
-/// Parse "2026-09-27T12:23:00.000Z" → epoch ms. Lenient: no range validation.
+// ISO date/time helpers — no chrono dependency.
+//
+// Parse "2026-09-27T12:23:00.000Z" (UTC), "…+05:00", or "…-07:30" → epoch
+// ms. No offset suffix is treated as UTC. Lenient: no range validation.
 pub fn parse_iso_utc(s: &str) -> Option<f64> {
     let (date, rest) = s.split_once('T')?;
     let rest = rest.trim_end_matches('Z');
@@ -18,11 +18,46 @@ pub fn parse_iso_utc(s: &str) -> Option<f64> {
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     let days = era * 146097 + doe - 719468;
     let secs = days * 86400;
-    let mut hp = rest.split(':');
+    // limit 3 so a ±HH:MM offset keeps its own colon (a plain split(':'))
+    // would swallow it: "00:00+07:30" → token "00+07", losing the :30.
+    let mut hp = rest.splitn(3, ':');
     let h: i64 = hp.next().unwrap_or("0").parse().ok()?;
     let mi: i64 = hp.next().unwrap_or("0").parse().ok()?;
-    let sec: f64 = hp.next().unwrap_or("0").parse().ok()?;
-    Some((secs + h * 3600 + mi * 60) as f64 * 1000.0 + sec * 1000.0)
+    let mut sec_part = hp.next().unwrap_or("0");
+    let mut offset_secs = 0i64;
+    if let Some(idx) = sec_part.find(['+', '-']) {
+        let (secs_part, off) = sec_part.split_at(idx);
+        offset_secs = parse_offset(off)?;
+        sec_part = secs_part;
+    }
+    let sec: f64 = sec_part.parse().ok()?;
+    // interpret civil time as UTC, then subtract the offset: 12:00+05:00
+    // means 07:00 UTC, i.e. 5h earlier than the literal civil read.
+    Some((secs + h * 3600 + mi * 60) as f64 * 1000.0 + sec * 1000.0 - offset_secs as f64 * 1000.0)
+}
+
+/// "+05:00" / "-07:30" → seconds east of UTC. Minutes part optional.
+fn parse_offset(s: &str) -> Option<i64> {
+    let (sign, rest) = if let Some(t) = s.strip_prefix('-') {
+        (-1i64, t)
+    } else if let Some(t) = s.strip_prefix('+') {
+        (1i64, t)
+    } else {
+        return None;
+    };
+    if rest.is_empty() {
+        return None;
+    }
+    let (h, m) = match rest.split_once(':') {
+        Some((h, m)) => (h.parse::<i64>().ok()?, m.parse::<i64>().ok()?),
+        None if rest.len() == 4 => {
+            // basic format "+0500" / "-0730": split HHMM at the midpoint.
+            let (h, m) = rest.split_at(2);
+            (h.parse::<i64>().ok()?, m.parse::<i64>().ok()?)
+        }
+        None => (rest.parse::<i64>().ok()?, 0),
+    };
+    Some(sign * (h * 3600 + m * 60))
 }
 
 /// days since epoch → YYYY-MM-DD (UTC). Howard Hinnant civil_from_days.

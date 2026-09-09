@@ -31,7 +31,15 @@ fn main() {
     }
 
     if let Some(cs) = args.config_set {
-        if let Err(e) = config::set(cs.interval, cs.width, cs.sl_template, cs.sl_colors, cs.sl_ascii) {
+        if let Err(e) = config::set(
+            cs.interval,
+            cs.width,
+            cs.sl_template,
+            cs.sl_colors,
+            cs.sl_ascii,
+            cs.burst_on,
+            cs.bursts,
+        ) {
             eprintln!("error: {e}");
             std::process::exit(1);
         }
@@ -116,6 +124,14 @@ fn main() {
         .unwrap_or(5)
         .clamp(1, 86_400);
     let bar_width = args.bar_width.or(Some(cfg.bar_width)).unwrap_or(20).max(5);
+    // spend-burst sparkline is opt-in: -b/--bursts on the CLI turns it on for
+    // this run; otherwise it follows the config flag (default off).
+    let burst_on = args.bursts.is_some() || cfg.burst_enabled;
+    let burst_cap = if burst_on {
+        args.bursts.or(Some(cfg.burst_samples)).unwrap_or(40).clamp(5, 240)
+    } else {
+        0
+    };
 
     if args.once {
         let s = snapshot::snapshot();
@@ -162,45 +178,136 @@ fn main() {
             history_used.remove(0);
         }
         history.push(delta);
-        if history.len() > 40 {
+        if !burst_on {
+            history.clear(); // sparkline disabled; don't accumulate forever
+        } else if history.len() > burst_cap {
             history.remove(0);
         }
-        // ponytail: 40 samples in memory (~3 min at 5s), no persistence —
-        // restart resets trend. Cap keeps sparkline row < ~65 cols so it
-        // never wraps the terminal and desyncs the in-place redraw.
+        // history only feeds the spend-burst sparkline (opt-in); no
+        // persistence across restarts.
         // upgrade: disk-persist history if users ask for cross-restart trends.
         let text = if args.plain {
             render::render_plain(&s, bar_width)
         } else {
             render::render(&s, bar_width)
         };
-        let spark = if history.len() >= 2 {
+        let spark = if burst_on
+            && history.len() >= 2
+            && history.iter().any(|v| *v > 0.0)
+        {
             format!("{DIM}spend bursts ({}s samples){RESET} {}\n", interval, render::sparkline(&history))
         } else {
-            String::new()
+            String::new() // idle (all-zero deltas) → no row, no flat-line noise
         };
         let status_line = format!(
             "{DIM}refreshing every {interval}s · ctrl-c to quit{RESET}"
         );
         let frame = format!("{text}{spark}{status_line}");
-        prev_lines = redraw_frame(&mut out, &frame, prev_lines);
+        prev_lines = redraw_frame(&mut out, &frame, prev_lines, term_cols());
         out.flush().ok();
         // countdown: rewrite just the status line each second (cursor already on it)
         for remaining in (1..interval).rev() {
             std::thread::sleep(std::time::Duration::from_secs(1));
-            write!(
-                out,
+            let msg = format!(
                 "\r\x1b[2K{DIM}refreshing every {interval}s · next refresh in {remaining}s · ctrl-c to quit{RESET}"
-            ).ok();
+            );
+            write!(out, "{}", clip_to_width(&msg, term_cols())).ok();
             out.flush().ok();
         }
+    }
+}
+
+/// Terminal width in columns, from `stty size`. None when not a tty or the
+/// probe fails — redraw then skips clipping (safe: non-tty can't wrap).
+fn term_cols() -> Option<usize> {
+    static COLS: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+    *COLS.get_or_init(|| {
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("stty size < /dev/tty")
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        String::from_utf8_lossy(&out.stdout)
+            .split_whitespace()
+            .nth(1)
+            .and_then(|c| c.parse::<usize>().ok())
+    })
+}
+
+/// Keep a frame line from auto-wrapping: count visible columns ignoring SGR
+/// escapes and control chars, and drop trailing visible chars that would
+/// push past `cols`. Appends a reset so a truncated color run can't leak.
+pub fn clip_to_width(line: &str, cols: Option<usize>) -> String {
+    let Some(cols) = cols else { return line.into() };
+    if cols == 0 {
+        return String::new();
+    }
+    let mut vis = 0usize;
+    let mut cs = line.chars().peekable();
+    while let Some(&c) = cs.peek() {
+        match c {
+            '\x1b' => {
+                cs.next();
+                for e in cs.by_ref() {
+                    if e.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+            c if (c as u32) < 0x20 => {
+                cs.next(); // \r etc: zero width
+            }
+            _ => {
+                vis += 1;
+                cs.next();
+            }
+        }
+    }
+    if vis <= cols {
+        return line.into();
+    }
+    let mut out = String::new();
+    let mut kept = 0usize;
+    let mut cs = line.chars();
+    while let Some(c) = cs.next() {
+        match c {
+            '\x1b' => {
+                out.push(c);
+                for e in cs.by_ref() {
+                    out.push(e);
+                    if e.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+            c if (c as u32) < 0x20 => {}
+            _ => {
+                if kept < cols {
+                    out.push(c);
+                    kept += 1;
+                }
+            }
+        }
+    }
+    if out.ends_with("\x1b[0m") {
+        out
+    } else {
+        out + "\x1b[0m"
     }
 }
 
 /// In-place terminal redraw of one frame. Assumes the cursor parks on the
 /// previous frame's last line (no trailing newline). Returns the new frame's
 /// line count so the caller can pass it back as `prev_lines`.
-fn redraw_frame(out: &mut impl Write, frame: &str, prev_lines: usize) -> usize {
+fn redraw_frame(
+    out: &mut impl Write,
+    frame: &str,
+    prev_lines: usize,
+    cols: Option<usize>,
+) -> usize {
     if prev_lines > 0 {
         // move cursor up to top of previous frame (we're ON its last line)
         write!(out, "\x1b[{}F", prev_lines - 1).ok();
@@ -208,6 +315,7 @@ fn redraw_frame(out: &mut impl Write, frame: &str, prev_lines: usize) -> usize {
     let lines: Vec<&str> = frame.lines().collect();
     let n = lines.len();
     for (i, line) in lines.iter().enumerate() {
+        let line = clip_to_width(line, cols);
         if i + 1 < n {
             write!(out, "\x1b[2K\r{line}\n").ok();
         } else {

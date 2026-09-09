@@ -211,6 +211,18 @@ mod tests {
     }
 
     #[test]
+    fn iso_offsets_convert_to_utc() {
+        // same civil instant expressed with explicit offsets == Z epoch.
+        let base = parse_iso_utc("2026-09-27T12:00:00.000Z").unwrap();
+        assert_eq!(parse_iso_utc("2026-09-27T12:00:00+00:00").unwrap(), base);
+        assert_eq!(parse_iso_utc("2026-09-27T07:00:00-05:00").unwrap(), base);
+        assert_eq!(parse_iso_utc("2026-09-27T19:30:00+07:30").unwrap(), base);
+        assert_eq!(parse_iso_utc("2026-09-27T07:00:00-0500").unwrap(), base);
+        // bad offsets → None
+        assert!(parse_iso_utc("2026-09-27T12:00:00X").is_none());
+    }
+
+    #[test]
     fn pace_warns_only_after_10pct_elapsed() {
         let now = 1_000_000u64;
         let d = 5 * 3600;
