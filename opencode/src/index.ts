@@ -130,6 +130,8 @@ export const CommandCodePlugin: Plugin = async (_input) => {
 
 			// ponytail: config-hook models cover old paths; provider.models hook
 			// (below) covers >=1.14.49. User-defined models always win the merge.
+			// upgrade: drop config-hook registration once minimum supported opencode
+			// is >=1.14.49 (provider.models hook supersedes it).
 			const claudeDefs = split
 				? toModelDefs(split.claude, "command-code-anthropic", "@ai-sdk/anthropic")
 				: {};

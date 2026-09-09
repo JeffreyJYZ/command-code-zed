@@ -161,6 +161,7 @@ fn iso_day_start(day: &str) -> String {
 /// Fetch cumulative summaries for many `since` boundaries with bounded
 /// concurrency; result order matches input order.
 /// ponytail: 8-way pool, no semaphore crate — spawn-and-join in chunks.
+/// upgrade: tune POOL only if account reports ever hit latency limits.
 fn fetch_pool(sinces: &[String], key: &str) -> Result<Vec<api::UsageSummary>, String> {
     const POOL: usize = 8;
     let mut out = Vec::new();

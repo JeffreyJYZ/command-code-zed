@@ -76,7 +76,9 @@ const KNOWN_KEYS = Object.keys(MODEL_CATEGORIES);
  * ponytail: heuristic, not CLI parity — CLI hard-rejects unknown ids, we
  * default-allow; the API enforces the real gate. Wrong guess only shows/hides
  * one model. Stem-match fallback was tried and removed: it picked the wrong
- * sibling deterministically (e.g. muse-spark-1.3 → muse-spark-1.1 premium). */
+ * sibling deterministically (e.g. muse-spark-1.3 → muse-spark-1.1 premium).
+ * upgrade: surface the API 403 reply instead of gating client-side once the
+ * provider error surfaces cleanly; re-probe after each CLI bundle extract. */
 function siblingCategory(model: string): Category | undefined {
 	const lower = model.toLowerCase();
 	let best: string | undefined;

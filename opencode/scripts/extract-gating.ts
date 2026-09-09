@@ -102,6 +102,8 @@ const knownFromSet = [...srRaw.matchAll(/"([a-z][^"]*)"/g)]
 	.map((m) => m[1]!);
 // ponytail: KNOWN_MODELS = Set literal ∪ category-table keys; the Set literal
 // alone misses models whose spec entries come from spread arrays in the bundle.
+// upgrade: alert on extract if regenerated KNOWN_MODELS ⊆ categories (Set-only)
+// ever becomes sufficient — the spread-source no longer exists, drop the union.
 const known = [...new Set([...knownFromSet, ...Object.keys(categories)])];
 
 // --- deprecated aliases: wr = { old: new } ---

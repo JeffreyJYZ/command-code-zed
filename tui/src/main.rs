@@ -160,7 +160,8 @@ fn main() {
             history_used.remove(0);
         }
         history.push(delta);
-        // ponytail: 60 samples in memory, no persistence — restart resets trend
+        // ponytail: 60 samples in memory, no persistence — restart resets trend.
+        // upgrade: disk-persist history if users ask for cross-restart trends.
         let text = if args.plain {
             render::render_plain(&s, bar_width)
         } else {

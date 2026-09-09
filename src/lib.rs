@@ -141,7 +141,8 @@ fn http_get_json(path: &str, key: &str) -> Result<Vec<u8>, String> {
         .redirect_policy(RedirectPolicy::FollowAll)
         .build()?;
     let resp = req.fetch().map_err(|e| format!("{path}: {e}"))?;
-    // ponytail: WIT HttpResponse has no status field; non-200 surfaces as JSON parse error
+    // ponytail: WIT HttpResponse has no status field; non-200 surfaces as JSON parse error.
+    // upgrade: re-check on every zed_extension_api bump (0.7.0 today) for a status field.
     serde_json::from_slice::<serde_json::Value>(&resp.body)
         .map_err(|e| format!("{path}: HTTP error or bad JSON: {e}"))?;
     Ok(resp.body)
@@ -268,7 +269,8 @@ fn window_line(label: &str, w: &Window, now: Option<u64>, dur_secs: Option<u64>)
         .map(|p| format!(" · window {p}% elapsed"))
         .unwrap_or_default();
     // burn-rate: pace vs cap, only warn if cap-hit lands before reset
-    // ponytail: flat-rate assumption; bursty sessions shift the ETA
+    // ponytail: flat-rate assumption; bursty sessions shift the ETA.
+    // upgrade: real fix = server-side rate history; revisit if ETA misfires in practice.
     let pace = dur_secs
         .zip(w.reset_at)
         .zip(now)

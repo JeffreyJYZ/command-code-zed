@@ -13,7 +13,6 @@ let cache: { at: number; models: CmdModel[] } | null = null;
 
 // ponytail: process-lifetime cache only; restart refetches. Add disk cache if
 // startup fetch latency ever annoys offline users.
-
 export function isClaude(id: string): boolean {
 	const bare = id.includes("/") ? id.slice(id.lastIndexOf("/") + 1) : id;
 	return bare.toLowerCase().startsWith("claude");

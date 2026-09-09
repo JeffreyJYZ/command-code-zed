@@ -143,6 +143,7 @@ pub fn window_line(
         .unwrap_or_default();
     // burn-rate projection: spend rate over window elapsed time → when cap hits.
     // ponytail: assumes flat spend rate; bursty sessions shift the ETA.
+    // upgrade: revisit if ETA misfires in practice (no server rate history yet).
     let pace = dur_secs
         .zip(w.reset_at)
         .and_then(|(d, reset)| {
@@ -227,6 +228,7 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
     o.push_str(&format!("\n{BOLD}Usage windows{RESET}\n"));
     // Monthly: cap from plan table, used = cap - remaining monthly credits.
     // ponytail: reset_at parsed from ISO date has no UTC offset; treated as UTC — off by hours at most.
+    // upgrade: parse an explicit offset if the API ever emits one (all-Z today).
     if let Some(cap) = monthly_cap {
         let used = (cap - s.credits.credits.monthly_credits).clamp(0.0, cap);
         let reset_at = s.sub.current_period_end.as_ref().and_then(|e| parse_iso_utc(e));
