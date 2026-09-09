@@ -1,5 +1,7 @@
 # Command Code tooling
 
+> **0.1.x release line.** The 0.2.0 restructure (Cargo workspace + shared `cmduse-core` crate) lives on the `0.2.0` branch in [`v2/`](v2/README.md).
+
 Three tools around the [Command Code](https://commandcode.ai) API:
 
 | Component | Path | What |

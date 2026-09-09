@@ -1,5 +1,7 @@
 # AGENTS.md
 
+This file documents the **0.1.x tree** (frozen release line). The 0.2.0 restructure — a Cargo workspace with a shared `core/` crate — lives in [`v2/`](v2/AGENTS.md). Edit there for new work; this tree only gets 0.1.x bugfixes.
+
 Command Code usage tooling: a Zed extension (WASM slash command) and `cmduse`, a standalone Rust CLI that renders Command Code plan/usage data in the terminal.
 
 ## Layout

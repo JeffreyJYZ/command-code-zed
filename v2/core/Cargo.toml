@@ -1,0 +1,7 @@
+[package]
+name = "cmduse-core"
+version = "0.2.0"
+edition = "2021"
+description = "Shared pure logic for cmduse (CLI) and the Command Code Zed extension: plan table, date/ISO helpers, window math, formatting."
+license = "MIT"
+repository = "https://github.com/JeffreyJYZ/command-code-zed"
