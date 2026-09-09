@@ -54,7 +54,7 @@ pub fn iso_hour_start(epoch: u64) -> String {
     let hour_start = epoch - epoch % 3600;
     let days = hour_start as i64 / 86400;
     let h = (hour_start % 86400) / 3600;
-    format!("{}{h:02}:00:00.000Z", civil_from_days(days))
+    format!("{}T{h:02}:00:00.000Z", civil_from_days(days))
 }
 
 /// shift YYYY-MM-DD by n days (UTC)

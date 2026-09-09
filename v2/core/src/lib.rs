@@ -169,6 +169,17 @@ mod tests {
     }
 
     #[test]
+    fn iso_hour_start_roundtrips() {
+        use crate::dates::iso_hour_start;
+        for epoch in [1_700_000_000u64, 1_767_225_600, 1_000_000_000] {
+            let s = iso_hour_start(epoch);
+            assert!(s.contains('T'), "must be a parseable ISO string: {s}");
+            let ms = parse_iso_utc(&s).unwrap() as u64;
+            assert_eq!(ms, (epoch - epoch % 3600) * 1000);
+        }
+    }
+
+    #[test]
     fn money_and_compact() {
         assert_eq!(money(0.0), "$0.00");
         assert_eq!(money(45.689), "$45.69");
