@@ -114,6 +114,10 @@ fn main() {
             statusline_cmd(&args);
             return;
         }
+        Some(cli::SubCmd::Models) => {
+            models_cmd(&args);
+            return;
+        }
         None => {}
     }
 
@@ -360,6 +364,50 @@ fn redraw_frame(
         write!(out, "\x1b[{}F", prev_lines - n).ok();
     }
     n
+}
+
+fn models_cmd(args: &cli::Args) {
+    let key = match api::api_key() {
+        Ok(k) => k,
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+    };
+    match api::models(&key) {
+        Ok(list) => {
+            if args.json {
+                for m in &list {
+                    let line = serde_json::to_string(m).unwrap_or_else(|_| "{}".into());
+                    println!("{line}");
+                }
+                return;
+            }
+            if list.is_empty() {
+                println!("no models returned");
+                return;
+            }
+            let mut rows: Vec<_> = list
+                .iter()
+                .map(|m| {
+                    let ctx = m
+                        .context_length
+                        .map(|n| format!("{} ctx", render::compact(n)))
+                        .unwrap_or_else(|| "-".into());
+                    let name = m.name.as_deref().unwrap_or(&m.id);
+                    (m.id.as_str(), name, ctx)
+                })
+                .collect();
+            rows.sort_by(|a, b| a.1.cmp(b.1));
+            for (id, name, ctx) in rows {
+                println!("{name:<36} {ctx:<10} {id}");
+            }
+        }
+        Err(e) => {
+            eprintln!("error: {e}");
+            std::process::exit(1);
+        }
+    }
 }
 
 fn statusline_cmd(args: &cli::Args) {

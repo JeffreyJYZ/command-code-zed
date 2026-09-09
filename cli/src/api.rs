@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 const API_BASE: &str = "https://api.commandcode.ai";
 
@@ -177,4 +177,29 @@ pub fn summary(key: &str) -> Result<UsageSummary, String> {
 pub fn summary_since(since: &str, key: &str) -> Result<UsageSummary, String> {
     serde_json::from_slice(&get(&format!("/alpha/usage/summary?since={since}"), key)?)
         .map_err(|e| format!("summary since={since}: {e}"))
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct ModelInfo {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub context_length: Option<u64>,
+    #[serde(default)]
+    pub owned_by: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ModelsResp {
+    #[serde(default)]
+    data: Vec<ModelInfo>,
+}
+
+/// Live model list from the provider endpoint (/provider/v1/models) — the
+/// same list the opencode plugin gates per plan. Raw here, no plan filter.
+pub fn models(key: &str) -> Result<Vec<ModelInfo>, String> {
+    let r: ModelsResp =
+        serde_json::from_slice(&get("/provider/v1/models", key)?).map_err(|e| e.to_string())?;
+    Ok(r.data)
 }

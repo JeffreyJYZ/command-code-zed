@@ -32,6 +32,7 @@ pub enum SubCmd {
     Model,
     Session,
     Statusline,
+    Models,
 }
 
 pub fn parse_args() -> Args {
@@ -109,6 +110,7 @@ pub fn parse_args() -> Args {
             "hourly" | "hours" => a.subcmd = Some(SubCmd::Hours),
             "model" => a.subcmd = Some(SubCmd::Model),
             "session" | "sessions" | "project" => a.subcmd = Some(SubCmd::Session),
+            "models" => a.subcmd = Some(SubCmd::Models),
             "statusline" => a.subcmd = Some(SubCmd::Statusline),
             "config" => {
                 // config set [interval=<s>] [width=<n>]
@@ -205,6 +207,7 @@ Usage: cmduse [options]           Live plan dashboard (watch mode)
        cmduse hourly [--hours N] [--json]  Account usage by hour (all harnesses)
        cmduse model [--json]      Local usage by model
        cmduse session [--json]    Local usage by project/session
+       cmduse models              Live model list from the Command Code API
        cmduse statusline          Compact one-liner for prompts/tmux
        cmduse config set interval=<s> width=<n> burst_on=true burst=40
 
