@@ -1,4 +1,4 @@
-use crate::{clip_to_width, redraw_frame};
+use crate::{clip_to_width, load_trend, redraw_frame, save_trend};
 
 #[test]
 fn redraw_grow_rewrites_from_old_top() {
@@ -69,4 +69,23 @@ fn clip_counts_visible_ignoring_color_codes() {
 fn clip_treats_carriage_return_as_zero_width() {
     let out = clip_to_width("\r\x1b[2Kxx", Some(2));
     assert_eq!(out.matches('x').count(), 2);
+}
+
+#[test]
+fn trend_roundtrips_across_home() {
+    let dir = std::env::temp_dir().join(format!("cmduse-trend-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let old = std::env::var_os("HOME");
+    std::env::set_var("HOME", &dir);
+
+    assert!(load_trend().is_none(), "no trend file yet");
+    save_trend(&[0.0, 0.5, 0.02]).unwrap();
+    assert_eq!(load_trend(), Some(vec![0.0, 0.5, 0.02]));
+
+    std::env::remove_var("HOME");
+    if let Some(h) = old {
+        std::env::set_var("HOME", h);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }
