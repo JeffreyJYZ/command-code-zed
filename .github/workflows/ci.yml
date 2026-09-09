@@ -3,44 +3,25 @@ name: CI
 on:
   push:
     branches: [main]
-    paths: ["tui/**", "src/**", "opencode/**", ".github/workflows/ci.yml"]
-  pull_request:
-    paths: ["tui/**", "src/**", "opencode/**", ".github/workflows/ci.yml"]
-
-env:
-  CARGO_TERM_COLOR: always
 
 jobs:
-  test:
+  workspace:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: tui
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: tui
-      - name: Build
-        run: cargo build --release
-      - name: Tests
-        run: cargo test
-      - name: Clippy
-        run: cargo clippy --release -- -D warnings
+      - run: cargo test --all-targets
+      - run: cargo clippy --all-targets -- -D warnings
 
-  zed-extension:
+  zed-ext-wasm:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@v2
-      - name: Build Zed extension
-        run: cargo build --target wasm32-wasip1 --release
+      - run: cargo build -p command-code-usage --target wasm32-wasip1 --release
 
   opencode-plugin:
     runs-on: ubuntu-latest
@@ -51,9 +32,5 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      - name: Typecheck
-        run: bun run typecheck
-      - name: Tests
-        run: bun test
-      - name: Build
-        run: bun run build
+      - run: bun test
+      - run: bun run typecheck

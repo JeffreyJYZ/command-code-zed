@@ -1,50 +1,28 @@
 # Command Code tooling
 
-> **0.1.x release line.** The 0.2.0 restructure (Cargo workspace + shared `cmduse-core` crate) lives on the `0.2.0` branch in [`v2/`](v2/README.md).
+Cargo workspace. One shared logic crate (`cmduse-core`) powering two thin
+UIs; the opencode plugin is a separate TS package. The pre-workspace 0.1.x
+tree is archived read-only in [`legacy/v0.1/`](legacy/v0.1/README.md).
 
-Three tools around the [Command Code](https://commandcode.ai) API:
-
-| Component | Path | What |
+| Component | Crate/dir | What |
 |---|---|---|
-| `cmduse` | [`tui/`](tui/README.md) | Terminal dashboard: plan/credits/windows, account + local usage reports, statusline. Published as `cmd-usage` on crates.io (`brew install JeffreyJYZ/tap/cmduse`). |
-| Zed extension | `src/` | `/cmd-usage` slash command in Zed's assistant panel (plan dashboard markdown). |
-| opencode plugin | [`opencode/`](opencode/) | `@jeffreyjyz/opencode-command-code` on npm — registers Command Code as an opencode provider (live model list, plan gating) plus a `cmd_usage` tool and `/cmd-usage` command. |
+| `cmduse` CLI | `cli/` (`cmd-usage`, bin `cmduse`) | Terminal dashboard: plan/credits/windows, watch mode, reports, statusline. Published on crates.io / Homebrew. |
+| Zed extension | `zed-ext/` (`command-code-usage`) | `/cmd-usage` slash command in Zed assistant panel (markdown dashboard). WASM build. |
+| Shared core | `core/` (`cmduse-core`) | Plan table, dates/ISO helpers, window/pace math, money/compact/pct/rel_time formatting. Single source — edit here, both UIs pick it up. |
+| opencode plugin | `opencode/` | `@jeffreyjyz/opencode-command-code` — Command Code as an opencode provider (live model list, plan gating). No core dep (different language). |
 
-## opencode plugin
-
-```sh
-# install
-npm i -g @jeffreyjyz/opencode-command-code
-
-# add to your opencode config (opencode.json or opencode.jsonc):
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@jeffreyjyz/opencode-command-code"]
-}
-```
-
-Restart opencode. `/connect` → **Command Code (Anthropic)** → paste your API key (or set `CMD_API_KEY`, or have `cmd login` done — the plugin reads that too).
-
-What you get:
-
-- **Two providers**: `command-code-anthropic` (Claude models, Anthropic Messages wire) and `command-code-openai` (everything else, OpenAI wire) — the API rejects the wrong wire per model, so the plugin splits them.
-- **Live model list** from `GET /provider/v1/models`, filtered by your plan (go/goat = open models only, pro = no opus/fable, max/ultra/provider = everything, purchased credits = everything). Gating tables are extracted from the Command Code CLI bundle (`bun run extract` regenerates after CLI updates).
-- **`cmd_usage` tool** — plan, credits, 5-hour/weekly windows, billing-period summary. `/cmd-usage` tells the agent to call it; `/cmd-usage plans` renders the plan comparison table.
-
-Existing manual `command-code-anthropic` / `command-code-openai` provider config in `opencode.json(c)` is merged, not replaced — your model overrides and options win.
-
-## Development
+## Build
 
 ```sh
-cd opencode
-bun run build      # bundle + d.ts
-bun test           # 29 tests
-bun run typecheck  # tsc --noEmit
-bun run extract    # regen gating tables from installed CLI bundle
+cargo build                      # all Rust crates
+cargo test                       # core + cli + zed-ext (host tests)
+cargo clippy --all-targets -- -D warnings
+cargo build -p command-code-usage --target wasm32-wasip1 --release   # Zed ext
+cd opencode && bun install && bun test
 ```
 
-Formatting: Biome (repo-root `biome.json`), tab indent width 4, lineWidth 100.
+## Why the split
 
-## License
-
-MIT
+0.1.x duplicated pure logic across two Rust crates (e.g. the burn-rate pace
+gate was patched in two files for one bug). The workspace moves all shared
+math into `core/`; `cli/` and `zed-ext/` keep only their presentation + I/O.
