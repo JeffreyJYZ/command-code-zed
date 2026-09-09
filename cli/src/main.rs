@@ -154,6 +154,16 @@ fn main() {
         eprintln!("{msg}");
     }
 
+    // In-place redraw needs a window the frame fits in. Below the minimum the
+    // cursor math can't hold: a frame taller than the terminal scrolls every
+    // refresh (shred). Refuse cleanly instead of garbling the screen.
+    if let Some((rows, cols)) = term_size() {
+        if rows < 16 || cols < 40 {
+            eprintln!("cmduse: window too small for the dashboard — need ≥40 cols × 16 rows (got {cols}×{rows}). Run with -1 for a one-shot, or resize.");
+            std::process::exit(0);
+        }
+    }
+
     // live mode: true in-place redraw. Frame's last line = status line,
     // drawn WITHOUT trailing newline so the cursor stays on it. Spinner
     // and countdown rewrite that line in place. No scroll, no drift.
@@ -242,11 +252,11 @@ fn save_trend(history: &[f64]) -> std::io::Result<()> {
     std::fs::write(path, serde_json::to_string(history).unwrap_or_else(|_| "[]".into()))
 }
 
-/// Terminal width in columns, from `stty size`. None when not a tty or the
-/// probe fails — redraw then skips clipping (safe: non-tty can't wrap).
-fn term_cols() -> Option<usize> {
-    static COLS: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
-    *COLS.get_or_init(|| {
+/// Terminal (rows, cols) from `stty size`. None when not a tty or the probe
+/// fails — redraw then skips clipping (safe: non-tty can't wrap).
+fn term_size() -> Option<(usize, usize)> {
+    static SIZE: std::sync::OnceLock<Option<(usize, usize)>> = std::sync::OnceLock::new();
+    *SIZE.get_or_init(|| {
         let out = std::process::Command::new("sh")
             .arg("-c")
             .arg("stty size < /dev/tty")
@@ -255,11 +265,16 @@ fn term_cols() -> Option<usize> {
         if !out.status.success() {
             return None;
         }
-        String::from_utf8_lossy(&out.stdout)
-            .split_whitespace()
-            .nth(1)
-            .and_then(|c| c.parse::<usize>().ok())
+        let text = String::from_utf8_lossy(&out.stdout);
+        let mut it = text.split_whitespace();
+        let rows = it.next()?.parse().ok()?;
+        let cols = it.next()?.parse().ok()?;
+        Some((rows, cols))
     })
+}
+
+fn term_cols() -> Option<usize> {
+    term_size().map(|(_, cols)| cols)
 }
 
 /// Keep a frame line from auto-wrapping: count visible columns ignoring SGR
