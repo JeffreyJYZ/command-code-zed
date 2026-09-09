@@ -281,6 +281,9 @@ fn window_line(label: &str, w: &Window, now: Option<u64>, dur_secs: Option<u64>)
                 return None;
             }
             let elapsed = (now_s - start) as f64;
+            if elapsed / (d as f64) < 0.10 {
+                return None; // too early in window: flat-rate ETA unreliable
+            }
             let rate = w.used / elapsed;
             if rate <= 0.0 {
                 return None;
@@ -490,6 +493,22 @@ mod tests {
         let reset = (now as f64 + 2.5 * 3600.0) * 1000.0;
         assert_eq!(elapsed_pct(Some(reset), 5 * 3600, Some(now)), Some(50));
         assert_eq!(elapsed_pct(None, 3600, Some(now)), None);
+    }
+
+    #[test]
+    fn pace_warns_only_after_10pct_elapsed() {
+        let now = 1_000_000u64;
+        let d = 5 * 3600;
+        let mk = |start: u64| Window {
+            used: 5.0,
+            cap: 10.0,
+            exceeded: false,
+            reset_at: Some((start + d) as f64 * 1000.0),
+        };
+        let early = window_line("5-hour", &mk(now - d / 20), Some(now), Some(d));
+        assert!(!early.contains("on pace"), "must not warn at 5% elapsed: {early}");
+        let at10 = window_line("5-hour", &mk(now - d / 10), Some(now), Some(d));
+        assert!(at10.contains("on pace"), "should warn at 10% elapsed: {at10}");
     }
 
     #[test]

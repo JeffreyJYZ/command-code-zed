@@ -47,7 +47,7 @@ cmduse statusline            # compact one-liner for prompts/tmux
 cmduse daily --json          # JSON output (daily, hourly, model, session, statusline)
 ```
 
-Burn-rate: windows show `on pace to hit cap in …` when the current spend rate projects hitting the cap before the window resets. ponytail: assumes flat spend rate; bursty sessions shift the ETA.
+Burn-rate: windows show `on pace to hit cap in …` when the current spend rate projects hitting the cap before the window resets, and only once the window is ≥10% elapsed (flat-rate projection is unreliable early). ponytail: assumes flat spend rate; bursty sessions shift the ETA.
 
 ## Statusline
 
@@ -106,6 +106,6 @@ Logged-in [Command Code CLI](https://commandcode.ai) — reads your API key from
 ## Notes
 
 - Window bars: green <70%, yellow 70–90%, red ≥90%, plus `LIMIT EXCEEDED` flag.
-- 5h spend-rate sparkline appears in watch mode after 2 refreshes (bars = $ spent per refresh: tall = burst, flat = idle).
+- Spend-burst sparkline appears in watch mode after 2 refreshes (bars = $ spent between refreshes, ~3 min of history at 5s interval, capped at 40 samples; tall = burst, flat = idle).
 - `cmduse` checks crates.io once per 24h and warns on stderr if a newer version exists. Delete `~/.cache/cmd-usage/last-check` to force a check.
 - On Monthly caps: monthly pool is the plan total (e.g. $70 on GOAT). Docs describe per-model allowances, but the CLI and API meter one shared pool — verified empirically.

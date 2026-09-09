@@ -17,6 +17,9 @@ mod config_tests;
 #[cfg(test)]
 mod render_tests;
 
+#[cfg(test)]
+mod main_tests;
+
 use std::io::Write;
 
 use crate::render::{DIM, RESET};
@@ -160,7 +163,12 @@ fn main() {
             history_used.remove(0);
         }
         history.push(delta);
-        // ponytail: 60 samples in memory, no persistence — restart resets trend.
+        if history.len() > 40 {
+            history.remove(0);
+        }
+        // ponytail: 40 samples in memory (~3 min at 5s), no persistence —
+        // restart resets trend. Cap keeps sparkline row < ~65 cols so it
+        // never wraps the terminal and desyncs the in-place redraw.
         // upgrade: disk-persist history if users ask for cross-restart trends.
         let text = if args.plain {
             render::render_plain(&s, bar_width)
@@ -168,40 +176,16 @@ fn main() {
             render::render(&s, bar_width)
         };
         let spark = if history.len() >= 2 {
-            format!("{DIM}5h spend rate ({}s){RESET} {}\n", interval, render::sparkline(&history))
+            format!("{DIM}spend bursts ({}s samples){RESET} {}\n", interval, render::sparkline(&history))
         } else {
             String::new()
         };
         let status_line = format!(
             "{DIM}refreshing every {interval}s · ctrl-c to quit{RESET}"
         );
-        if prev_lines > 0 {
-            // move cursor up to top of previous frame (we're ON its last line)
-            write!(out, "\x1b[{}F", prev_lines - 1).ok();
-        }
         let frame = format!("{text}{spark}{status_line}");
-        let lines: Vec<&str> = frame.lines().collect();
-        let n = lines.len();
-        for (i, line) in lines.iter().enumerate() {
-            if i + 1 < n {
-                write!(out, "\x1b[2K\r{line}\n").ok();
-            } else {
-                // last line: clear and write, NO newline — cursor stays here
-                write!(out, "\x1b[2K\r{line}").ok();
-            }
-        }
-        if n < prev_lines {
-            // new frame shorter than old (error frame): pad with cleared lines
-            // up to the old height so the bottom anchor row never moves —
-            // writing \n here would scroll the screen and desync the cursor.
-            for _ in n..prev_lines {
-                write!(out, "\x1b[2K\r\n").ok();
-            }
-            // cursor now one line past old bottom; step back up to new bottom
-            write!(out, "\x1b[1F").ok();
-        }
+        prev_lines = redraw_frame(&mut out, &frame, prev_lines);
         out.flush().ok();
-        prev_lines = n;
         // countdown: rewrite just the status line each second (cursor already on it)
         for remaining in (1..interval).rev() {
             std::thread::sleep(std::time::Duration::from_secs(1));
@@ -212,6 +196,42 @@ fn main() {
             out.flush().ok();
         }
     }
+}
+
+/// In-place terminal redraw of one frame. Assumes the cursor parks on the
+/// previous frame's last line (no trailing newline). Returns the new frame's
+/// line count so the caller can pass it back as `prev_lines`.
+fn redraw_frame(out: &mut impl Write, frame: &str, prev_lines: usize) -> usize {
+    if prev_lines > 0 {
+        // move cursor up to top of previous frame (we're ON its last line)
+        write!(out, "\x1b[{}F", prev_lines - 1).ok();
+    }
+    let lines: Vec<&str> = frame.lines().collect();
+    let n = lines.len();
+    for (i, line) in lines.iter().enumerate() {
+        if i + 1 < n {
+            write!(out, "\x1b[2K\r{line}\n").ok();
+        } else {
+            // last line: clear and write, NO newline — cursor stays here
+            write!(out, "\x1b[2K\r{line}").ok();
+        }
+    }
+    if n < prev_lines {
+        // new frame shorter than old (error frame): clear the stale rows
+        // below the new frame WITHOUT touching the frame we just wrote.
+        // First move down one row (no clear) so the frame's last line
+        // survives, then clear-and-advance each remaining stale row,
+        // clear the old bottom row, and step back up to the new bottom.
+        // Writing \n at the very bottom row would scroll and desync —
+        // clear in place with \x1b[2K\x1b[1B instead.
+        write!(out, "\x1b[1B").ok();
+        for _ in (n + 1)..prev_lines {
+            write!(out, "\x1b[2K\x1b[1B").ok();
+        }
+        write!(out, "\x1b[2K").ok();
+        write!(out, "\x1b[{}F", prev_lines - n).ok();
+    }
+    n
 }
 
 fn statusline_cmd(args: &cli::Args) {

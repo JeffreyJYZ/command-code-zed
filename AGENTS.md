@@ -17,7 +17,7 @@ tui/                cmduse CLI crate (published as `cmd-usage` on crates.io, bin
   src/reports.rs    local JSONL parser + account-wide daily/hourly (cumulative-diff); HTTP via api::summary_since
   src/report_render.rs  statusline template engine + report tables (local/account/hourly/model/session)
   src/config.rs     config load/save, validation, XDG path
-  src/render_tests.rs / config_tests.rs / cli_tests.rs   unit tests
+  src/render_tests.rs / config_tests.rs / cli_tests.rs / main_tests.rs   unit tests
 .github/workflows/ci.yml   CI: tui build/test/clippy -D warnings + Zed ext wasm build
 ```
 
@@ -42,13 +42,13 @@ tui/                cmduse CLI crate (published as `cmd-usage` on crates.io, bin
 ### cmduse architecture
 
 - Watch mode: true in-place redraw. Frame's LAST line has NO trailing newline so cursor parks on it; spinner/countdown rewrite that line in place with `\r\x1b[K`. Redraw does `\x1b[{n}F` (n = prev_lines-1) to jump to frame top. Trailing newline anywhere → cursor drift/scroll-shred in real terminals (invisible in piped captures — always test under `script -q /dev/null`).
-- **Frame-shrink redraw: NEVER write `\n` at bottom row** — it scrolls the screen once per refresh and desyncs the cursor (error frames → 23 repeated headers). Pad `\x1b[2K\r\n` up to old height, then `\x1b[1F` back to new bottom. Keeps bottom anchor fixed. Fixed in 0.1.17.
+- **Frame-shrink redraw**: when new frame is shorter than old (success frame ↔ 5-line error frame oscillates), the frame's LAST line must survive and stale rows below it must be cleared WITHOUT scrolling. Old code padded `\x1b[2K\r\n` then `\x1b[1F` — but each pad clears the row it starts on (wiping the just-written status line) and `1F` only returns `prev-n-1` rows short of the new bottom when shrinking by more than one line. Every shrink then desynced the next frame's `\x1b[{n}F` → stair-stepped repeated frames. Correct: from new bottom, `\x1b[1B`, clear-and-advance stale rows with `\x1b[2K\x1b[1B`, clear old bottom with `\x1b[2K`, then `\x1b[{prev-n}F` back to new bottom. Never write `\n` at the bottom row.
 - **Transient TLS errors** (`tls connection init failed: unexpected end of file`): api.commandcode.ai drops handshakes intermittently. `api::get` retries up to 5× (1s base, 8s cap, fastrand jitter), 15s per-attempt timeout, transient matcher covers tls/connection/timeout/eof/handshake/certificate + HTTP 429/5xx (ureq error string `status code 429` / `status code 5`). 0.1.16; HTTP-status retry added after.
 - **Update check is synchronous** (`update_check::check_sync`, called before the redraw loop): spawning a thread that eprintln!s asynchronously could garble the in-place redraw frame. One ≤5s block per day is fine.
 - **stdout lock deadlock**: main thread holds `StdoutLock` for the whole loop; spinner threads must NOT write via `std::io::stdout()` — they block forever on the mutex and `join()` hangs, killing refreshes. Spinner writes to its own `/dev/tty` handle. This bit once; test watch mode under a pty (`script`) or it looks fine in captures.
 - Spinner bug class: `start()` calls `stop()` first (safety), which sets stop_flag=true — MUST reset flag to false before spawning or thread exits instantly (zero frames, no error).
 - Statusline: template engine in report_render.rs. Placeholders `{plan} {credits} {cap} {credits_bar} {5h_bar} {5h_pct} {5h_used} {5h_cap} {wk_bar} {wk_pct} {wk_used} {wk_cap}`. Unknown placeholders dropped, unclosed brace passes through, multi-line OK, `sl_colors=false` strips ANSI post-render, `sl_ascii=true` swaps ━╱ for #-.
-- Burn rate: window spend ÷ time since window start (resetAt - dur). Warning only if projected cap-hit < reset. Flat-rate assumption marked `ponytail:`.
+- Burn rate: window spend ÷ time since window start (resetAt - dur). Warning only if projected cap-hit < reset AND ≥10% of window elapsed (flat-rate ETA unreliable early). Flat-rate assumption marked `ponytail:`. Same guard duplicated in src/lib.rs (Zed ext) + tui/src/render.rs.
 - Time math: no chrono. All ISO/UTC date helpers live in dates.rs (`parse_iso_utc`, `civil_from_days`, `today_utc`, `day_shift`, `iso_hour_start`, `hour_label`). render.rs re-exports `parse_iso_utc`; reports.rs imports the rest. ISO treated as UTC (no offset parsing) — off by hours at most, acceptable.
 - Config: `~/.config/cmd-usage/config.json` (XDG_CONFIG_HOME respected). interval clamp 1–86400, bar width 5–200. CLI flags override config. Config keys: `interval_secs, bar_width, statusline_template, statusline_colors, statusline_ascii`.
 - `cmduse config set` keys: `interval=`, `width=`, `sl=`, `sl_colors=`, `sl_ascii=` (values with `=`, parse errors exit 2).
@@ -71,7 +71,7 @@ tui/                cmduse CLI crate (published as `cmd-usage` on crates.io, bin
 
 ### Testing
 
-- `cargo test` in `tui/` (24 tests). Pure-function coverage: plan mapping, bars, money/compact, rel_time, ISO parse, elapsed %, window_line, renders (ANSI/plain/JSON), config round-trip with temp XDG dir, statusline templates, sparkline.
+- `cargo test` in `tui/` (28 tests). Pure-function coverage: plan mapping, bars, money/compact, rel_time, ISO parse, elapsed %, window_line, renders (ANSI/plain/JSON), config round-trip with temp XDG dir, statusline templates, sparkline, redraw escape-sequence regression (main_tests.rs asserts exact control chars for grow/shrink/no-prev — shrink bug class is invisible in piped captures, assert the bytes not the screen).
 - Watch-mode/spinner bugs only reproduce under a pty: `timeout 9 script -q /dev/null ./target/release/cmduse -i 3 | rg "fetching"` — piped captures hide TTY-gated code paths.
 - Always `rg`, never grep. Tests updated in the same commit as the code they cover.
 

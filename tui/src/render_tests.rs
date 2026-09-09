@@ -164,6 +164,35 @@ fn window_line_includes_elapsed_and_flag() {
 }
 
 #[test]
+fn pace_warns_only_after_10pct_elapsed() {
+    use crate::api::Window;
+    let now = 1_000_000u64;
+    let d = 5 * 3600;
+
+    // 5% elapsed, spend rate would hit cap → suppressed (too early).
+    let start5 = now - d / 20;
+    let w_early = Window {
+        used: 5.0,
+        cap: 10.0,
+        exceeded: false,
+        reset_at: Some((start5 + d) as f64 * 1000.0),
+    };
+    let line = window_line("5-hour", &w_early, now, 20, Some(d));
+    assert!(!line.contains("on pace"), "must not warn at 5% elapsed: {line}");
+
+    // 10% elapsed, same spend rate → pace warning shown.
+    let start10 = now - d / 10;
+    let w_at = Window {
+        used: 5.0,
+        cap: 10.0,
+        exceeded: false,
+        reset_at: Some((start10 + d) as f64 * 1000.0),
+    };
+    let line = window_line("5-hour", &w_at, now, 20, Some(d));
+    assert!(line.contains("on pace"), "should warn at 10% elapsed: {line}");
+}
+
+#[test]
 fn plain_render_contains_sections() {
     let s = snapshot_fixture();
     let out = render_plain(&s, 20);

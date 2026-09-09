@@ -153,6 +153,9 @@ pub fn window_line(
                 return None; // window not started or already rolling over
             }
             let elapsed = (now - start) as f64;
+            if elapsed / (d as f64) < 0.10 {
+                return None; // too early in window: flat-rate ETA unreliable
+            }
             let rate = w.used / elapsed; // $/sec
             if rate <= 0.0 {
                 return None;
