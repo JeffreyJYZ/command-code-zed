@@ -1,0 +1,454 @@
+.TH CMDUSE 1 "2026-09" "cmd-usage 0.5" "User Commands"
+.SH NAME
+cmduse \- live Command Code (commandcode.ai) usage dashboard and reporter
+.SH SYNOPSIS
+.B cmduse
+[\fIOPTIONS\fR]
+.br
+.B cmduse \-1
+[\fIOPTIONS\fR]
+.br
+.B cmduse daily
+[\fB\-\-days\fR \fIn\fR] [\fB\-\-json\fR] [\fB\-\-local\fR]
+.br
+.B cmduse hourly
+[\fB\-\-hours\fR \fIn\fR] [\fB\-\-json\fR] [\fB\-\-local\fR]
+.br
+.B cmduse model
+[\fB\-\-json\fR]
+.br
+.B cmduse session
+[\fB\-\-json\fR]
+.br
+.B cmduse models
+[\fB\-\-json\fR]
+.br
+.B cmduse statusline
+[\fB\-\-json\fR]
+.br
+.B cmduse config set
+\fIkey\fR=\fIvalue\fR [\fIkey\fR=\fIvalue\fR ...]
+.br
+.B cmduse \-V
+.br
+.B cmduse \-h
+.SH DESCRIPTION
+.B cmduse
+is a terminal client for the Command Code (commandcode.ai) metered AI API.  It
+fetches the account's plan, remaining monthly credits, and the 5\-hour and
+weekly rolling spending windows, and renders them as a live in\-place
+dashboard.  It also produces account\-wide usage reports (all harnesses, via
+the usage API), offline reports from local CLI logs, a template\-driven
+statusline for prompts, and a listing of live models.
+.PP
+Authentication is read from
+.IR ~/.commandcode/auth.json ,
+the login state written by the official Command Code CLI (\fBcmd login\fR).
+The file is a JSON object containing an \fBapiKey\fR field.  There is no
+separate cmduse login; without that file every network command fails with an
+error naming the missing key.
+.SH EXIT STATUS
+.TP
+0
+Success.
+.TP
+1
+Runtime failure (network, auth, config write, report fetch).
+.TP
+2
+Argument parse error; a message was printed to stderr.
+.SH SUBCOMMANDS
+With no subcommand, \fBcmduse\fR runs the live dashboard in watch mode.  With
+\fB\-1\fR it fetches once and prints.
+.TP
+.B daily
+Account usage by UTC day for the last \fI\-\-days\fR N days (default 7, max
+365, today included).  Account\-wide means all harnesses (CLI, IDE, web,
+API) that spent against the same account.  Days are derived by fetching the
+cumulative summary at each UTC midnight and differencing adjacent
+boundaries; requests are pooled 8 at a time in parallel.  With
+\fB\-\-local\fR it instead reads only this machine's CLI sessions from
+.IR ~/.commandcode/projects
+(offline, no API key required, misses other harnesses).  \fB\-\-json\fR
+emits one JSON object per day on its own line, then a totals object on a
+line with key "total".
+.TP
+.B hourly
+Same cumulative\-differencing method as \fBdaily\fR but over UTC hour
+boundaries for the last \fI\-\-hours\fR N hours (default 24, max 168).
+\fB\-\-local\fR reads CLI\-log hour buckets offline.  \fB\-\-json\fR emits
+rows then a totals line.
+.TP
+.B model
+Local usage grouped by model, read from
+.IR ~/.commandcode/projects
+(offline; the usage API exposes no per\-model split).  \fB\-\-json\fR
+supported.
+.TP
+.B session
+Local usage grouped by project/session directory, same offline file.
+\fB\-\-json\fR supported.
+.TP
+.B models
+Live model list from the provider endpoint
+.I GET https://api.commandcode.ai/provider/v1/models
+\-\- the same source the account plan gating uses.  Unfiltered by plan.
+Text rows are sorted by display name as
+.IR "NAME  CONTEXT  ID" ,
+where CONTEXT is a human K/M count or "\-" when the API omits it.
+\fB\-\-json\fR prints one JSON object per model per line with keys id, name,
+context_length, owned_by.
+.TP
+.B statusline
+Fetch once and print a single compact line (no trailing newline) built from
+the configured statusline template.  Suitable for shell prompts, tmux
+status, and headless scripts.  On any API error prints
+.I "cmduse: <error>"
+to stdout and exits 1.  \fB\-\-json\fR prints one JSON object:
+plan, monthlyRemaining, monthlyCap, fiveHourUsed, fiveHourCap, weeklyUsed,
+weeklyCap (all dollars as JSON numbers; plan is the human name such as
+"GOAT").
+.TP
+.B config set \fIkey\fR=\fIvalue\fR ...
+Merge the given settings into
+.I ~/.config/cmd\-usage/config.json
+(or
+.IR $XDG_CONFIG_HOME/cmd\-usage/config.json )
+and print the resulting values.  Keys and valid ranges:
+.RS
+.TP
+interval=\fIs\fR
+refresh seconds, 1\(en86400.
+.TP
+width=\fIn\fR
+bar width, 5\(en200.
+.TP
+burst_on=\fIbool\fR
+show the spend\-burst sparkline row in watch mode (default true).
+.TP
+burst=\fIn\fR
+sparkline sample count, 5\(en240 (default 40).
+.TP
+sl=\fIstring\fR
+statusline template, see STATUSLINE.
+.TP
+sl_colors=\fIbool\fR
+ANSI colors in the statusline (default true).
+.TP
+sl_ascii=\fIbool\fR
+use "#\-" bars instead of the "\[ha]"/dash glyphs in the statusline (default
+false).
+.RE
+Unknown keys, non\-numeric values, and out\-of\-range values abort with a
+message and exit 2; nothing is written.
+.SH OPTIONS
+.TP
+.B \-1, \-\-once
+Fetch once, print, exit.  Without this, watch mode runs forever until
+Ctrl\-C.
+.TP
+.B \-p, \-\-plain
+No ANSI colors and no live redraw (used with \fB\-1\fR for scripts/pipes).
+In watch mode it keeps the plain text render but still redraws in place.
+.TP
+.B \-i, \-\-interval \fIs\fR
+Refresh interval seconds (1\(en86400).  Overrides config
+\fBinterval_secs\fR.
+.TP
+.B \-w, \-\-bar\-width \fIn\fR
+Progress bar width (5\(en200).  Overrides config \fBbar_width\fR.
+.TP
+.B \-b, \-\-bursts \fIn\fR
+Show the spend\-burst sparkline for this run with N samples (5\(en240);
+implies it on regardless of config.
+.TP
+.B \-\-days \fIn\fR
+.BR daily : number of days back (1\(en365).
+.TP
+.B \-\-hours \fIn\fR
+.BR hourly : number of hours back (1\(en168).
+.TP
+.B \-\-json
+Machine\-readable output where the subcommand supports it.
+.TP
+.B \-\-local
+.BR daily " / " hourly :
+read only this machine's CLI logs; no network.
+.TP
+.B \-V, \-\-version
+Print \fBcmduse <version>\fR and exit 0.
+.TP
+.B \-h, \-\-help
+Print usage and exit 0.  Accepts "help" as a bare word too.
+.TP
+.B config
+Config subcommand; see SUBCOMMANDS.
+.SH THE LIVE DASHBOARD
+With no subcommand, \fBcmduse\fR renders a frame and rewrites it in place
+every interval.  All line content is clipped to the terminal width and the
+frame never exceeds what the window holds, so it cannot wrap or scroll
+during normal operation.
+.SS Layout (full mode)
+The frame is, top to bottom:
+.RS
+.nf
+Command Code Usage . GOAT . active
+Period ends 2026-09-27
+
+Credits $44.15 / $70.00 monthly . $0.00 purchased . $0.00 free
+
+Usage windows
+ Monthly   36.9% <bar> $25.85 / $70.00 . resets in 18d 0h . window 42% elapsed
+ 5-hour    11.1% <bar> $1.55  / $14.00 . resets in 2h 22m . window 59% elapsed
+ Weekly    55.7% <bar> $19.61 / $35.00 . resets in 1d 18h . window 75% elapsed
+
+This billing period
+ Requests 2.7K . Cost $26.63 . Tokens 402.1M in / 721.2K out . Success 100%
+.fi
+.RE
+When enabled and there was nonzero spend in the last samples, an extra
+spend\-burst row precedes the last (status) line.
+.PP
+Line semantics:
+.TP
+Header
+Plan display name (see below) and subscription status.
+.TP
+Period ends
+The UTC billing cycle end date, from the subscription's
+\fBcurrentPeriodEnd\fR.  Exactly the first 10 characters (YYYY\-MM\-DD).
+.TP
+Credits
+Remaining monthly credits, purchased credits, and free credits.  The cap
+shown is from the local plan table (see PLAN TABLE), not from the API.
+.TP
+Usage windows
+Three rows.  Bar fill is used/cap; the percentage is used/cap; "used / cap"
+is in dollars; "resets in" is wall time until the window rolls;
+"window N% elapsed" is time since the window start divided by its length.
+Monthly's used is derived: monthly cap minus remaining credits.  Its cap and
+period come from the plan table and the subscription period.  5\-hour and
+weekly data (used, cap, resetAt) come verbatim from the API
+\fBwindowLimits\fR response and are never derived.
+.TP
+On pace warning
+When a window is at least 10% elapsed AND the current spend rate
+(used since window start, divided by seconds since window start) projects
+hitting the cap before the window resets, the row gains
+\fI. on pace to hit cap in <Xh Ym>\fR.  Under 10% elapsed no projection is
+shown (a flat extrapolation from minutes of data is noise).  The projection
+assumes a flat spend rate; bursty sessions shift it.
+.TP
+This billing period
+Cumulative request count, cost, input/output tokens (human K/M compact) and
+success rate, from the usage summary endpoint.
+.SS Window math (exact)
+A window of length L seconds ends at instant R (epoch ms, from the API or,
+for monthly, the subscription period end parsed as ISO 8601 UTC).  Its start
+is R \- L.  Elapsed percent is
+.IR "(now \- start) / L ",
+clamped to 0\(en100, rounded to a whole percent.  "Resets in" is R \- now,
+rendered as "Nd Nh" when a day or more, "Nh Nm" when an hour or more, "Nm"
+when a minute or more, else "<1m".  When now >= R it renders "resetting..."
+(the next fetch carries the fresh window).  Pace ETA is
+.IR "used / (now \- start) ",
+giving a dollars\-per\-second rate; seconds\-to\-cap is
+.IR "(cap \- used) / rate";
+it is shown only when that lands before R and the 10% gate passes.  ISO
+dates parse as UTC when suffixed with Z or lacking a suffix, and honor an
+explicit +HH:MM or \-HH:MM (or basic +HHMM) offset by shifting the civil
+reading; a time with no offset is read as UTC.
+.SS Compact mode
+The terminal size is re\-queried every refresh.  When the window is smaller
+than 40 columns by 16 rows the full frame is replaced by a single content
+line:
+.RS
+.nf
+GOAT $44.15/$70.00 . 5h $1.55
+.fi
+.RE
+followed by the status line.  When the window is resized back over the
+threshold the full frame returns, in place.  Even a very small window (a few
+columns) keeps redrawing the clipped compact line stably; there is no exit
+and no shredding.
+.SS Status line and countdown
+The final frame line is the status line:
+.I "refreshing every <N>s . ctrl-c to quit"
+Between refreshes, each second the line rewrites in place as
+.I "refreshing every <N>s . next refresh in <K>s . ctrl-c to quit"
+.IR "K" " = N\-1 .. 1".
+Both lines are clipped to the terminal width if needed; a line exactly at
+the width is legal (no wrap), longer content is truncated at the width.
+.SS Spend\-burst sparkline
+On by default; disabled with
+.BR "config set burst_on=false" .
+It is one row, labeled
+.I "spend bursts (<N>s samples) "
+followed by the history rendered as an 8\-level bar chart.  Each bar is the
+dollar delta of the 5\-hour window's cumulative used between two consecutive
+refreshes, so a tall bar means spend during that interval and a flat line
+means idle.  Sample count is config \fBburst_samples\fR (default 40) or
+\fB\-b\fR on the command line; at a 5s interval 40 samples is about 3
+minutes.  The row is hidden while every retained delta is zero, so idle
+screens stay quiet.  History persists across runs in
+.I ~/.cache/cmd\-usage/trend.json
+and is loaded at startup, so the sparkline resumes rather than starting
+empty; it is appended and trimmed each refresh.  Zero scale renders an
+all\-low row.
+.SH PLAN TABLE
+Plan detection lowercases the API plan id and matches substrings in this
+order: "enterprise" -> Enterprise, "provider" -> Provider,
+"team" -> Team Pro, "max" with "20" -> Max 20x, "max" without
+-> Max 10x, "goat" -> GOAT, "pro" -> Pro, "go" -> Go,
+anything else -> Free.
+.PP
+Monthly credit pool by plan (single shared pool, verified empirically; the
+docs' per\-model allowances are not what the API meters):
+.IP Go
+$10
+.IP GOAT
+$70
+.IP Pro
+$80
+.IP Max 10x
+$150
+.IP Max 20x
+$300
+.IP Team Pro
+$40
+.IP Enterprise / Provider
+none (pay\-as\-you\-go; no monthly cap row)
+.PP
+The 5\-hour and weekly caps (e.g. $14 / $35 on GOAT) are NOT in this table;
+they come from the API
+.B windowLimits
+response and must not be derived client\-side.
+.SH STATUSLINE
+The statusline template supports the placeholders
+.I {plan} {credits} {cap} {credits_bar} {5h_bar} {5h_pct} {5h_used} {5h_cap}
+.I {wk_bar} {wk_pct} {wk_used} {wk_cap}
+. Unknown placeholders are dropped; an unclosed brace passes through;
+multi\-line templates are allowed.  \fBsl_colors=false\fR strips ANSI after
+rendering; \fBsl_ascii=true\fR renders bars with "#" and "\-" instead of the
+box glyphs.  {credits} is remaining monthly credits, {cap} the plan monthly
+cap.  The same template engine renders both the statusline subcommand and
+any statusline template in a shell prompt.
+.SH API ENDPOINTS
+All requests go to
+.IR https://api.commandcode.ai ,
+with header
+.I Authorization: Bearer <apiKey>
+and Accept: application/json.  Endpoints:
+.IP "GET /alpha/billing/subscriptions"
+plan id, status, current period start/end.
+.IP "GET /alpha/billing/credits"
+credits object (monthly/purchased/free) and windowLimits (fiveHour, weekly;
+each with used, cap, resetAt in ms).
+.IP "GET /alpha/usage/summary"
+cumulative totals: count, cost, tokens in/out, success rate.
+.IP "GET /alpha/usage/summary?since=<ISO>"
+same shape, cumulative since the ISO instant (used by daily/hourly
+differencing).
+.IP "GET /provider/v1/models"
+live model list; each entry has id, and may have name, context_length,
+owned_by.
+.PP
+Transient failures (TLS handshake drops, timeouts, EOF, 429, and any 5xx)
+are retried up to 5 times with an exponential backoff (1s base, 8s cap,
+jitter); a hard 15s per\-attempt timeout applies.  A watch\-mode fetch that
+still fails renders a minimal error frame:
+.RS
+.nf
+Command Code Usage . fetch failed
+error: <joined per-endpoint errors>
+retrying on next refresh
+.fi
+.RE
+and the next interval retries; no fake zero data is shown.
+.SH FILES
+.TP
+.I ~/.commandcode/auth.json
+Read; API key.  Written by the Command Code CLI.
+.TP
+.I ~/.commandcode/projects
+Read; per\-project CLI usage logs used by \fBdaily\fR/\fBhourly\fR
+\fB\-\-local\fR, \fBmodel\fR, \fBsession\fR.  JSON lines.
+.TP
+.I ~/.config/cmd\-usage/config.json
+Config, or
+.I $XDG_CONFIG_HOME/cmd\-usage/config.json
+when XDG_CONFIG_HOME is set.  Missing/corrupt files silently fall back to
+defaults (a corrupt file prints a warning to stderr).  Keys:
+.RS
+.TP
+interval_secs
+integer 1\(en86400, default 5.
+.TP
+bar_width
+integer 5\(en200, default 20.
+.TP
+burst_enabled
+boolean, default true.
+.TP
+burst_samples
+integer 5\(en240, default 40.
+.TP
+statusline_template
+string, default "{plan} {credits}/{cap} . 5h {5h_bar} . wk {wk_bar}".
+.TP
+statusline_colors
+boolean, default true.
+.TP
+statusline_ascii
+boolean, default false.
+.RE
+Unknown keys are preserved on config set (the file is rewritten from the
+merged struct, so unknown keys are actually dropped on the next
+.I "config set"
+write; hand\-editing extra keys is tolerated until a config set rewrites the
+file).
+.TP
+.I ~/.cache/cmd\-usage/trend.json
+Spend delta history (JSON array of floats), appended every refresh while the
+sparkline is enabled.
+.TP
+.I ~/.cache/cmd\-usage/last\-check
+Epoch seconds of the last crates.io update check; controls the once\-per\-day
+version notice.
+.SH ENVIRONMENT
+.TP
+.B XDG_CONFIG_HOME
+Base for the config file when set.
+.TP
+.B HOME
+Base for auth, projects, config (fallback), and cache paths when
+XDG_CONFIG_HOME is unset.
+.SH EXAMPLES
+.nf
+cmduse                     # live dashboard, 5s refresh
+cmduse -1                  # one shot
+cmduse -1 -p               # plain one shot (scripts)
+cmduse -i 30 -w 40         # slower refresh, wider bars
+cmduse -b 120              # sparkline with 120 samples
+cmduse daily --days 14     # account usage, two weeks
+cmduse daily --local       # this machine only
+cmduse hourly --hours 6
+cmduse models
+cmduse statusline
+cmduse config set interval=10 burst_on=false
+.fi
+.SH BUGS / NOTES
+Rendering edge cases were observed against real terminals:
+.IP \(bu
+A frame taller than the terminal scrolls on refresh; that is why watch mode
+switches to compact mode under 40x16 and clips every line to the width.
+.IP \(bu
+Never add a trailing newline after the frame's last line and never write a
+bare newline at the very bottom row of the window; both desync the in\-place
+redraw in real terminals.
+.IP \(bu
+Account dailies and hourlies are UTC; a session near a midnight boundary
+splits across two day rows.
+.SH SEE ALSO
+.BR cmd (1),
+the Command Code CLI for login and authentication.
