@@ -72,6 +72,16 @@ fn clip_treats_carriage_return_as_zero_width() {
 }
 
 #[test]
+fn clip_keeps_leading_carriage_return_when_truncated() {
+    // countdown bug: truncating dropped the \r, so each rewrite appended at
+    // the current column instead of returning to col 0 → thin terminals got a
+    // fresh duplicate "refreshing every…" per tick.
+    let msg = "\r\x1b[2Krefreshing every 2s · next refresh in 1s · ctrl-c to quit";
+    let out = clip_to_width(msg, Some(20));
+    assert_eq!(out, "\r\x1b[2Krefreshing every 2s \x1b[0m", "CR kept + clipped: {out:?}");
+}
+
+#[test]
 fn trend_roundtrips_across_home() {
     let dir = std::env::temp_dir().join(format!("cmduse-trend-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);

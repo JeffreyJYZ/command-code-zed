@@ -308,6 +308,7 @@ pub fn clip_to_width(line: &str, cols: Option<usize>) -> String {
                     }
                 }
             }
+            '\r' => out.push(c), // carriage return is meaningful: keep it
             c if (c as u32) < 0x20 => {}
             _ => {
                 if kept < cols {
