@@ -35,6 +35,7 @@ cmduse -V                    # print version
 cmduse -p -1                 # plain output, no ANSI (for scripts/pipes)
 cmduse -i 30                 # refresh every 30s
 cmduse -w 40                 # 40-char progress bars
+man cmduse                   # full behavior spec (brew installs the man page)
 
 cmduse daily --days 14       # account usage by day (all harnesses, from usage API)
                              # --days max 365, fetched 8-at-a-time
