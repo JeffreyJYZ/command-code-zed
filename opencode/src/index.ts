@@ -132,6 +132,10 @@ export const CommandCodePlugin: Plugin = async (_input) => {
 			// (below) covers >=1.14.49. User-defined models always win the merge.
 			// upgrade: drop config-hook registration once minimum supported opencode
 			// is >=1.14.49 (provider.models hook supersedes it).
+			// Verify 2026-09: `opencode models` (headless) lists command-code-openai/*
+			// via the config hook, but zero command-code-anthropic/* — the anthropic
+			// lane is auth-gated (its /connect entry has no stored key headlessly).
+			// Confirm in the TUI after /connect, not via the CLI listing.
 			const claudeDefs = split
 				? toModelDefs(split.claude, "command-code-anthropic", "@ai-sdk/anthropic")
 				: {};
