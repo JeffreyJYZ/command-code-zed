@@ -53,7 +53,8 @@ Burn-rate: windows show `on pace to hit cap in …` when the current spend rate 
 
 Watch mode: a `spend bursts (N samples)` sparkline shows $ spent per refresh.
 It is on by default, hidden while idle (all-zero deltas), and its sample count
-is configurable — the trend also survives restarts:
+is configurable. Session-only: a fresh run starts a fresh trend (no stale
+data from earlier runs):
 
 ```sh
 cmduse config set burst_on=false      # turn the sparkline off

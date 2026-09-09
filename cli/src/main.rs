@@ -165,9 +165,9 @@ fn main() {
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     let mut prev_lines = 0usize;
-    // deltas ($ per refresh) feed the spend-burst sparkline and are persisted
-    // so the trend survives restarts (see trend_path below).
-    let mut history: Vec<f64> = if burst_on { load_trend().unwrap_or_default() } else { Vec::new() };
+    // deltas ($ per refresh) feed the spend-burst sparkline. Session-only:
+    // no disk persistence — a fresh run shows a fresh trend, never old data.
+    let mut history: Vec<f64> = Vec::new();
     let mut history_used: Vec<f64> = Vec::new(); // raw cumulative 5h spend
     loop {
         let s = snapshot::snapshot();
@@ -197,8 +197,6 @@ fn main() {
             if history.len() > burst_cap {
                 history.remove(0);
             }
-            // persist on every refresh: tiny file, keeps the trend across runs.
-            let _ = save_trend(&history);
         }
         let text = if compact {
             compact_dashboard(&s)
@@ -253,26 +251,6 @@ fn compact_dashboard(s: &crate::render::Snapshot) -> String {
         format!(" · {}", s.sub.status)
     };
     format!("{BOLD}{}{RESET} {rem_txt}/{cap_txt} · 5h {h5}{status}\n", plan_name(&s.sub.plan_id))
-}
-
-/// Spend-burst delta history is persisted to ~/.cache/cmd-usage/trend.json so
-/// the sparkline survives restarts (same cache dir as the update check).
-fn trend_path() -> std::path::PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
-    std::path::PathBuf::from(home).join(".cache/cmd-usage/trend.json")
-}
-
-fn load_trend() -> Option<Vec<f64>> {
-    let s = std::fs::read_to_string(trend_path()).ok()?;
-    serde_json::from_str(&s).ok()
-}
-
-fn save_trend(history: &[f64]) -> std::io::Result<()> {
-    let path = trend_path();
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    std::fs::write(path, serde_json::to_string(history).unwrap_or_else(|_| "[]".into()))
 }
 
 /// Terminal (rows, cols) from `stty size`. None when not a tty or the probe

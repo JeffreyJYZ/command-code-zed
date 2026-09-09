@@ -1,4 +1,4 @@
-use crate::{clip_to_width, load_trend, redraw_frame, save_trend};
+use crate::{clip_to_width, redraw_frame};
 
 #[test]
 fn redraw_grow_rewrites_from_old_top() {
@@ -81,21 +81,3 @@ fn clip_keeps_leading_carriage_return_when_truncated() {
     assert_eq!(out, "\r\x1b[2Krefreshing every 2s \x1b[0m", "CR kept + clipped: {out:?}");
 }
 
-#[test]
-fn trend_roundtrips_across_home() {
-    let dir = std::env::temp_dir().join(format!("cmduse-trend-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let old = std::env::var_os("HOME");
-    std::env::set_var("HOME", &dir);
-
-    assert!(load_trend().is_none(), "no trend file yet");
-    save_trend(&[0.0, 0.5, 0.02]).unwrap();
-    assert_eq!(load_trend(), Some(vec![0.0, 0.5, 0.02]));
-
-    std::env::remove_var("HOME");
-    if let Some(h) = old {
-        std::env::set_var("HOME", h);
-    }
-    let _ = std::fs::remove_dir_all(&dir);
-}

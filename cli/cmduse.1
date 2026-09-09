@@ -290,11 +290,9 @@ refreshes, so a tall bar means spend during that interval and a flat line
 means idle.  Sample count is config \fBburst_samples\fR (default 40) or
 \fB\-b\fR on the command line; at a 5s interval 40 samples is about 3
 minutes.  The row is hidden while every retained delta is zero, so idle
-screens stay quiet.  History persists across runs in
-.I ~/.cache/cmd\-usage/trend.json
-and is loaded at startup, so the sparkline resumes rather than starting
-empty; it is appended and trimmed each refresh.  Zero scale renders an
-all\-low row.
+screens stay quiet.  History is session\-only: it starts empty each run and
+never shows spend from earlier sessions.  Zero scale renders an all\-low
+row.
 .SH PLAN TABLE
 Plan detection lowercases the API plan id and matches substrings in this
 order: "enterprise" -> Enterprise, "provider" -> Provider,
