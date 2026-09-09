@@ -38,6 +38,18 @@ cargo build -p command-code-usage --target wasm32-wasip1 --release
 cd opencode && bun test && bun run typecheck   # plugin unchanged
 ```
 
+## Publishing (NEVER without explicit user go)
+
+- Order matters: `cmduse-core` first, then `cmd-usage`. `cli/Cargo.toml` dep
+  is `{ path = "../core", version = "0.2.0" }` — path resolves locally, the
+  `version` must already exist on crates.io for `cmd-usage` publish to work.
+- Clean tree required (commit first, incl. Cargo.lock). Zed ext has NO
+  release channel (local dev-install only).
+- Homebrew after every cmd-usage release: `JeffreyJYZ/homebrew-tap`,
+  `Formula/cmduse.rb` — bump version, url, sha256
+  (`curl -sL https://static.crates.io/crates/cmd-usage/cmd-usage-<v>.crate | shasum -a 256`).
+- README/AGENTS updated in the same commit.
+
 ## Learned-the-hard-way (carried over)
 
 Everything in root `AGENTS.md` "Critical knowledge" applies — API endpoints,
