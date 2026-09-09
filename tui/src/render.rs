@@ -41,13 +41,13 @@ pub fn plan_monthly_cap(plan_id: &str) -> Option<f64> {
     }
 }
 
-const RESET: &str = "\x1b[0m";
-const DIM: &str = "\x1b[2m";
-const BOLD: &str = "\x1b[1m";
-const GREEN: &str = "\x1b[32m";
-const YELLOW: &str = "\x1b[33m";
-const RED: &str = "\x1b[31m";
-const CYAN: &str = "\x1b[36m";
+pub const RESET: &str = "\x1b[0m";
+pub const DIM: &str = "\x1b[2m";
+pub const BOLD: &str = "\x1b[1m";
+pub const GREEN: &str = "\x1b[32m";
+pub const YELLOW: &str = "\x1b[33m";
+pub const RED: &str = "\x1b[31m";
+pub const CYAN: &str = "\x1b[36m";
 
 fn color_for(pct: f64) -> &'static str {
     if pct >= 90.0 {

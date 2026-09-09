@@ -158,28 +158,23 @@ fn iso_day_start(day: &str) -> String {
     format!("{day}T00:00:00.000Z")
 }
 
-/// Fetch `f(day)` for many days with bounded concurrency.
+/// Fetch cumulative summaries for many `since` boundaries with bounded
+/// concurrency; result order matches input order.
 /// ponytail: 8-way pool, no semaphore crate — spawn-and-join in chunks.
-fn bounded_fetch(
-    starts: &[String],
-    key: &str,
-    f: fn(&str, &str) -> Result<api::UsageSummary, String>,
-) -> Result<Vec<(String, api::UsageSummary)>, String> {
+fn fetch_pool(sinces: &[String], key: &str) -> Result<Vec<api::UsageSummary>, String> {
     const POOL: usize = 8;
-    let mut out: Vec<(String, api::UsageSummary)> = Vec::new();
-    for chunk in starts.chunks(POOL) {
+    let mut out = Vec::new();
+    for chunk in sinces.chunks(POOL) {
         let handles: Vec<_> = chunk
             .iter()
-            .map(|d| {
-                let s = iso_day_start(d);
+            .map(|s| {
+                let s = s.clone();
                 let k = key.to_string();
-                let dd = d.clone();
-                std::thread::spawn(move || (dd, f(&s, &k)))
+                std::thread::spawn(move || api::summary_since(&s, &k))
             })
             .collect();
         for h in handles {
-            let (d, r) = h.join().map_err(|_| "usage thread panicked".to_string())?;
-            out.push((d, r?));
+            out.push(h.join().map_err(|_| "usage thread panicked".to_string())??);
         }
     }
     Ok(out)
@@ -191,19 +186,20 @@ fn bounded_fetch(
 pub fn load_account_daily(days: usize, key: &str) -> Result<ByDay, String> {
     let today = today_utc();
     let days = days.max(1);
-    let starts: Vec<String> = (0..days)
+    let days_list: Vec<String> = (0..days)
         .filter_map(|i| day_shift(&today, -(i as i64)))
         .collect();
-
-    let mut cums = bounded_fetch(&starts, key, api::summary_since)?;
-    // sort oldest → newest
-    cums.sort_by(|a, b| a.0.cmp(&b.0));
+    let sinces: Vec<String> = days_list.iter().map(|d| iso_day_start(d)).collect();
+    let cums = fetch_pool(&sinces, key)?;
+    // zip back with day labels, sort oldest → newest
+    let mut by_day: Vec<(String, api::UsageSummary)> = days_list.into_iter().zip(cums).collect();
+    by_day.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut out = ByDay::new();
-    for (i, (day, cum)) in cums.iter().enumerate() {
+    for (i, (day, cum)) in by_day.iter().enumerate() {
         // per-day = cum(day start) - cum(next day start); for today subtract 0
-        let (reqs, cost, tin, tout) = if i + 1 < cums.len() {
-            let next = &cums[i + 1].1;
+        let (reqs, cost, tin, tout) = if i + 1 < by_day.len() {
+            let next = &by_day[i + 1].1;
             (
                 cum.total_count.saturating_sub(next.total_count),
                 (cum.total_cost - next.total_cost).max(0.0),
@@ -274,21 +270,9 @@ pub fn load_account_hourly(hours: usize, key: &str) -> Result<Vec<(String, Total
         .map(|i| current_hour - (i as u64) * 3600)
         .collect();
 
-    // bounded 8-way pool (same as daily)
-    let mut cums: Vec<api::UsageSummary> = Vec::new();
-    for chunk in bounds.chunks(8) {
-        let handles: Vec<_> = chunk
-            .iter()
-            .map(|&b| {
-                let s = iso_hour_start(b);
-                let k = key.to_string();
-                std::thread::spawn(move || api::summary_since(&s, &k))
-            })
-            .collect();
-        for h in handles {
-            cums.push(h.join().map_err(|_| "usage thread panicked".to_string())??);
-        }
-    }
+    // bounded 8-way pool (shared fetch_pool); cums[i] aligns with bounds[i]
+    let sinces: Vec<String> = bounds.iter().map(|&b| iso_hour_start(b)).collect();
+    let cums = fetch_pool(&sinces, key)?;
 
     // cum[i] = usage from bounds[i] → now. per-hour i = cum[i] - cum[i+1];
     // current (last) bucket = cum[last] (nothing after it to subtract — it

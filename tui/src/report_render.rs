@@ -1,12 +1,4 @@
-use crate::render::{compact, money};
-
-const RESET: &str = "\x1b[0m";
-const DIM: &str = "\x1b[2m";
-const BOLD: &str = "\x1b[1m";
-const CYAN: &str = "\x1b[36m";
-const GREEN: &str = "\x1b[32m";
-const YELLOW: &str = "\x1b[33m";
-const RED: &str = "\x1b[31m";
+use crate::render::{BOLD, compact, CYAN, DIM, GREEN, money, RED, RESET, YELLOW};
 
 pub fn bar(pct: f64, width: usize, ascii: bool) -> String {
     let filled = ((pct / 100.0).clamp(0.0, 1.0) * width as f64).round() as usize;
@@ -170,50 +162,27 @@ fn table_row(day: &str, t: &crate::reports::Totals, dim: bool) -> String {
     )
 }
 
-/// Local (CLI-only, offline) daily table
-pub fn table(by_day: &crate::reports::ByDay, total: &crate::reports::Totals, days: Option<usize>, json: bool) -> String {
+/// Daily usage table (local or account scope). JSON key and heading differ.
+pub fn table(scope: &str, subtitle: &str, by_day: &crate::reports::ByDay, total: &crate::reports::Totals, days: Option<usize>, json: bool) -> String {
     if json {
         let ds: Vec<String> = by_day
             .iter()
             .map(|(d, t)| format!("\"{}\":{}", d, total_json(t)))
             .collect();
         return format!(
-            "{{\"scope\":\"local\",\"total\":{},\"days\":{{{}}}}}",
+            "{{\"scope\":\"{scope}\",\"total\":{},\"days\":{{{}}}}}",
             total_json(total),
             ds.join(",")
         );
     }
     let mut o = format!(
-        "{BOLD}Local usage{RESET} {DIM}(offline, ~/.commandcode/projects){RESET}\n\n"
+        "{BOLD}{}{RESET} {DIM}({subtitle}){RESET}\n\n",
+        if scope == "account" { "Account usage" } else { "Local usage" }
     );
     o.push_str(&table_header());
     let day_count = by_day.len();
     let last_n = days.unwrap_or(usize::MAX);
     for (day, t) in by_day.iter().skip(day_count.saturating_sub(last_n)) {
-        o.push_str(&table_row(day, t, false));
-    }
-    o.push_str(&table_row("total", total, true));
-    o
-}
-
-/// Account-wide daily table (all harnesses, from usage API)
-pub fn account_table(by_day: &crate::reports::ByDay, total: &crate::reports::Totals, json: bool) -> String {
-    if json {
-        let ds: Vec<String> = by_day
-            .iter()
-            .map(|(d, t)| format!("\"{}\":{}", d, total_json(t)))
-            .collect();
-        return format!(
-            "{{\"scope\":\"account\",\"total\":{},\"days\":{{{}}}}}",
-            total_json(total),
-            ds.join(",")
-        );
-    }
-    let mut o = format!(
-        "{BOLD}Account usage{RESET} {DIM}(all harnesses){RESET}\n\n"
-    );
-    o.push_str(&table_header());
-    for (day, t) in by_day {
         o.push_str(&table_row(day, t, false));
     }
     o.push_str(&table_row("total", total, true));

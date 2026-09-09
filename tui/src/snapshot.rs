@@ -1,10 +1,7 @@
 use crate::api;
 use std::sync::atomic::AtomicBool;
-use crate::render::Snapshot;
+use crate::render::{CYAN, RESET, Snapshot};
 use std::io::Write;
-
-const CYAN: &str = "\x1b[36m";
-const RESET: &str = "\x1b[0m";
 
 pub fn snapshot() -> Snapshot {
     let mut s = empty_snapshot();

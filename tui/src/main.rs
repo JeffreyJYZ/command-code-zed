@@ -19,8 +19,7 @@ mod render_tests;
 
 use std::io::Write;
 
-const RESET: &str = "\x1b[0m";
-const DIM: &str = "\x1b[2m";
+use crate::render::{DIM, RESET};
 
 fn main() {
     let args = cli::parse_args();
@@ -49,7 +48,7 @@ fn main() {
             match data_source {
                 Some(Ok(by_day)) => {
                     let total = reports::sum_days(&by_day);
-                    print!("{}", report_render::account_table(&by_day, &total, args.json));
+                    print!("{}", report_render::table("account", "all harnesses", &by_day, &total, None, args.json));
                 }
                 Some(Err(e)) => {
                     eprintln!("error: {e}");
@@ -57,7 +56,7 @@ fn main() {
                 }
                 None => {
                     let d = reports::load_local();
-                    print!("{}", report_render::table(&d.by_day, &d.total, args.last, args.json));
+                    print!("{}", report_render::table("local", "offline, ~/.commandcode/projects", &d.by_day, &d.total, args.last, args.json));
                 }
             }
             return;

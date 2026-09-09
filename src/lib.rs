@@ -304,19 +304,19 @@ fn window_line(label: &str, w: &Window, now: Option<u64>, dur_secs: Option<u64>)
 
 fn plans_table(current: &str) -> String {
     let plans = [
-        ("go", "Go", "$1", "$10", "$3", "$6"),
-        ("goat", "GOAT", "$10", "$70", "$14", "$35"),
-        ("pro", "Pro", "$20", "$80", "$16", "$40"),
-        ("provider", "Provider", "$15", "PAYG", "—", "—"),
-        ("max-10", "Max 10x", "$100", "$150", "$45", "$90"),
-        ("max-20", "Max 20x", "$200", "$300", "$90", "$180"),
-        ("team-pro", "Team Pro", "$40", "$40", "$12", "$24"),
+        ("Go", "$1", "$10", "$3", "$6"),
+        ("GOAT", "$10", "$70", "$14", "$35"),
+        ("Pro", "$20", "$80", "$16", "$40"),
+        ("Provider", "$15", "PAYG", "—", "—"),
+        ("Max 10x", "$100", "$150", "$45", "$90"),
+        ("Max 20x", "$200", "$300", "$90", "$180"),
+        ("Team Pro", "$40", "$40", "$12", "$24"),
     ];
     // Mark by exact plan_name match (not substring): "individual-goat"
     // contains "go", so substring matching double-marks the Go row.
     let mine = plan_name(current);
     let mut out = String::from("| Plan | Price | Credits/mo | 5-hour | Weekly |\n|---|---|---|---|---|\n");
-    for (_id, name, price, monthly, h5, wk) in plans {
+    for (name, price, monthly, h5, wk) in plans {
         let mark = if name == mine { "**" } else { "" };
         out.push_str(&format!(
             "| {mark}{name}{mark} | {price}/mo | {monthly} | {h5} | {wk} |\n"

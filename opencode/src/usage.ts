@@ -89,20 +89,20 @@ export function windowLine(label: string, w: Window, nowSecs: number): string {
 }
 
 export function plansTable(current: string): string {
-	const plans: Array<[string, string, string, string, string, string]> = [
-		["go", "Go", "$1", "$10", "$3", "$6"],
-		["goat", "GOAT", "$10", "$70", "$14", "$35"],
-		["pro", "Pro", "$20", "$80", "$16", "$40"],
-		["provider", "Provider", "$15", "PAYG", "—", "—"],
-		["max-10", "Max 10x", "$100", "$150", "$45", "$90"],
-		["max-20", "Max 20x", "$200", "$300", "$90", "$180"],
-		["team-pro", "Team Pro", "$40", "$40", "$12", "$24"],
+	const plans: Array<[string, string, string, string, string]> = [
+		["Go", "$1", "$10", "$3", "$6"],
+		["GOAT", "$10", "$70", "$14", "$35"],
+		["Pro", "$20", "$80", "$16", "$40"],
+		["Provider", "$15", "PAYG", "—", "—"],
+		["Max 10x", "$100", "$150", "$45", "$90"],
+		["Max 20x", "$200", "$300", "$90", "$180"],
+		["Team Pro", "$40", "$40", "$12", "$24"],
 	];
 	// Mark by exact plan_name match (not substring): "individual-goat"
 	// contains "go", so substring matching double-marks the Go row.
 	const mine = planName(current);
 	let out = "| Plan | Price | Credits/mo | 5-hour | Weekly |\n|---|---|---|---|---|\n";
-	for (const [_id, name, price, monthly, h5, wk] of plans) {
+	for (const [name, price, monthly, h5, wk] of plans) {
 		const mark = name === mine ? "**" : "";
 		out += `| ${mark}${name}${mark} | ${price}/mo | ${monthly} | ${h5} | ${wk} |\n`;
 	}

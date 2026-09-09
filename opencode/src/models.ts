@@ -6,8 +6,6 @@ export type CmdModel = { id: string; name: string; contextLength: number };
 export type ModelSplit = {
 	claude: CmdModel[];
 	open: CmdModel[];
-	gatedOut: string[];
-	source: "live" | "cache" | "stale";
 };
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -32,12 +30,10 @@ export function splitModels(models: CmdModel[]): {
 }
 
 /** Fetch live model list, apply plan gating, split by wire protocol. */
-export async function loadModels(key: string, opts?: { skipPlan?: boolean }): Promise<ModelSplit> {
+export async function loadModels(key: string): Promise<ModelSplit> {
 	let models: CmdModel[];
-	let source: ModelSplit["source"];
 	if (cache && Date.now() - cache.at < CACHE_TTL_MS) {
 		models = cache.models;
-		source = "cache";
 	} else {
 		try {
 			const resp = await providerModels(key);
@@ -47,11 +43,9 @@ export async function loadModels(key: string, opts?: { skipPlan?: boolean }): Pr
 				contextLength: m.context_length ?? 0,
 			}));
 			cache = { at: Date.now(), models };
-			source = "live";
 		} catch {
 			if (cache) {
 				models = cache.models;
-				source = "stale";
 			} else {
 				throw new Error(
 					"Could not fetch Command Code model list (https://api.commandcode.ai/provider/v1/models). Check network/API key.",
@@ -61,23 +55,18 @@ export async function loadModels(key: string, opts?: { skipPlan?: boolean }): Pr
 	}
 
 	let plan: PlanLike = { planId: "", purchasedCredits: 0, freeCredits: 0 };
-	let gatedOut: string[] = [];
-	if (!opts?.skipPlan) {
-		try {
-			const sub = await getPlanInfo(key);
-			const cr = await credits(key);
-			plan = {
-				planId: sub.planId,
-				purchasedCredits: cr.credits.purchasedCredits ?? 0,
-				freeCredits: cr.credits.freeCredits ?? 0,
-			};
-		} catch {
-			// gating needs billing API; if unreachable, show everything (API enforces real limits)
-		}
+	try {
+		const sub = await getPlanInfo(key);
+		const cr = await credits(key);
+		plan = {
+			planId: sub.planId,
+			purchasedCredits: cr.credits.purchasedCredits ?? 0,
+			freeCredits: cr.credits.freeCredits ?? 0,
+		};
+	} catch {
+		// gating needs billing API; if unreachable, show everything (API enforces real limits)
 	}
 	const allowed = filterByPlan(models, plan);
-	const allowedIds = new Set(allowed.map((m) => m.id));
-	gatedOut = models.filter((m) => !allowedIds.has(m.id)).map((m) => m.id);
 	const { claude, open } = splitModels(allowed);
-	return { claude, open, gatedOut, source };
+	return { claude, open };
 }
