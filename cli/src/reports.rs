@@ -1,5 +1,5 @@
 use crate::api;
-use cmduse_core::dates::{day_shift, iso_hour_start, hour_label, parse_iso_utc, today_utc};
+use cmduse_core::dates::{civil_from_days, day_shift, hour_label, iso_hour_start, parse_iso_utc, today_utc};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -154,8 +154,29 @@ pub fn load_local() -> LocalData {
 // from that instant to now. Per-day usage = cum(day start) - cum(next day
 // start).
 
-fn iso_day_start(day: &str) -> String {
-    format!("{day}T00:00:00.000Z")
+fn iso_day_start(day: &str, tz: i64) -> String {
+    if tz == 0 {
+        format!("{day}T00:00:00.000Z")
+    } else {
+        // explicit offset: core parses it and shifts to UTC
+        format!("{day}T00:00:00{}", tz_suffix(tz))
+    }
+}
+
+/// UTC-offset seconds → "+HH:MM" / "-HH:MM".
+fn tz_suffix(tz: i64) -> String {
+    let sign = if tz < 0 { '-' } else { '+' };
+    let a = tz.abs();
+    format!("{sign}{:02}:{:02}", a / 3600, (a % 3600) / 60)
+}
+
+/// Civil "today" in the given fixed offset.
+fn today_in_tz(tz: i64) -> String {
+    if tz == 0 {
+        return today_utc();
+    }
+    let now = now_epoch() as i64;
+    civil_from_days((now - tz).div_euclid(86400))
 }
 
 /// Fetch cumulative summaries for many `since` boundaries with bounded
@@ -184,13 +205,13 @@ fn fetch_pool(sinces: &[String], key: &str) -> Result<Vec<api::UsageSummary>, St
 /// Account-wide per-day usage for the last `days` days (today included),
 /// fetched from the usage API (8-way concurrent). Includes usage from
 /// every harness that used the account key.
-pub fn load_account_daily(days: usize, key: &str) -> Result<ByDay, String> {
-    let today = today_utc();
+pub fn load_account_daily(days: usize, key: &str, tz: i64) -> Result<ByDay, String> {
+    let today = today_in_tz(tz);
     let days = days.max(1);
     let days_list: Vec<String> = (0..days)
         .filter_map(|i| day_shift(&today, -(i as i64)))
         .collect();
-    let sinces: Vec<String> = days_list.iter().map(|d| iso_day_start(d)).collect();
+    let sinces: Vec<String> = days_list.iter().map(|d| iso_day_start(d, tz)).collect();
     let cums = fetch_pool(&sinces, key)?;
     // zip back with day labels, sort oldest → newest
     let mut by_day: Vec<(String, api::UsageSummary)> = days_list.into_iter().zip(cums).collect();
@@ -261,25 +282,29 @@ fn now_epoch() -> u64 {
 
 /// Account-wide usage for the last `hours` hours, one row per hour bucket
 /// (oldest first, current hour last). Includes all harnesses.
-pub fn load_account_hourly(hours: usize, key: &str) -> Result<Vec<(String, Totals)>, String> {
+pub fn load_account_hourly(hours: usize, key: &str, tz: i64) -> Result<Vec<(String, Totals)>, String> {
     let hours = hours.max(1);
     let now = now_epoch();
-    let current_hour = now - now % 3600;
-    // boundaries: start of each of the last N hours (oldest → current)
-    let bounds: Vec<u64> = (0..hours)
+    // bucket boundaries in the requested offset: shift to local, floor to the
+    // hour, then shift back to UTC to form the `since` instant. Labels use the
+    // local hour.
+    let local_now = (now as i64 - tz) as u64;
+    let current_hour_local = local_now - local_now % 3600;
+    let bounds_local: Vec<u64> = (0..hours)
         .rev()
-        .map(|i| current_hour - (i as u64) * 3600)
+        .map(|i| current_hour_local - (i as u64) * 3600)
         .collect();
+    let bounds_utc: Vec<u64> = bounds_local.iter().map(|b| (*b as i64 + tz) as u64).collect();
 
     // bounded 8-way pool (shared fetch_pool); cums[i] aligns with bounds[i]
-    let sinces: Vec<String> = bounds.iter().map(|&b| iso_hour_start(b)).collect();
+    let sinces: Vec<String> = bounds_utc.iter().map(|&b| iso_hour_start(b)).collect();
     let cums = fetch_pool(&sinces, key)?;
 
     // cum[i] = usage from bounds[i] → now. per-hour i = cum[i] - cum[i+1];
     // current (last) bucket = cum[last] (nothing after it to subtract — it
     // covers only up to now, which is what we want).
     let mut out = Vec::new();
-    for (i, b) in bounds.iter().enumerate() {
+    for (i, b) in bounds_local.iter().enumerate() {
         let (reqs, cost, tin, tout) = if i + 1 < cums.len() {
             let next = &cums[i + 1];
             (

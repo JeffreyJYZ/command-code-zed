@@ -13,6 +13,7 @@ pub struct Args {
     pub json: bool,
     pub local: bool,
     pub gated: bool,
+    pub tz: Option<i64>,
 }
 
 #[derive(Debug, Default)]
@@ -24,6 +25,7 @@ pub struct ConfigSet {
     pub sl_ascii: Option<bool>,
     pub bursts: Option<usize>,
     pub burst_on: Option<bool>,
+    pub notify: Option<bool>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -52,13 +54,21 @@ pub fn parse_args() -> Args {
         json: false,
         local: false,
         gated: false,
+        tz: None,
     };
+    let (mut saw_once, mut saw_watch) = (false, false);
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         match arg.as_str() {
-            "-1" | "--once" => a.once = true,
+            "-1" | "--once" => {
+                a.once = true;
+                saw_once = true;
+            }
             "-p" | "--plain" => a.plain = true,
-            "-W" | "--watch" => a.once = false, // explicit default mode
+            "-W" | "--watch" | "watch" => {
+                a.once = false; // explicit default mode
+                saw_watch = true;
+            }
             "-h" | "--help" | "help" => a.help = true,
             "-V" | "--version" | "version" => {
                 println!("cmduse {}", env!("CARGO_PKG_VERSION"));
@@ -67,12 +77,22 @@ pub fn parse_args() -> Args {
             "--json" => a.json = true,
             "--local" => a.local = true,
             "--gated" => a.gated = true,
+            "--tz" => {
+                let v = it.next().expect("tz needs a value");
+                match parse_tz(&v) {
+                    Some(secs) => a.tz = Some(secs),
+                    None => {
+                        eprintln!("--tz needs an offset like +05:30 or -08:00 (got '{v}')");
+                        std::process::exit(2);
+                    }
+                }
+            }
             "-i" | "--interval" => {
                 let v = it.next().expect("interval needs a value");
-                match v.parse::<u64>() {
-                    Ok(n) if (1..=86_400).contains(&n) => a.interval = Some(n),
+                match parse_duration(&v) {
+                    Some(n) if (1..=86_400).contains(&n) => a.interval = Some(n),
                     _ => {
-                        eprintln!("-i needs a number 1–86400 (got '{v}')");
+                        eprintln!("-i needs a duration 1s–24h (e.g. 30, 30s, 5m, 1h) (got '{v}')");
                         std::process::exit(2);
                     }
                 }
@@ -175,8 +195,15 @@ pub fn parse_args() -> Args {
                                         std::process::exit(2);
                                     }
                                 },
+                                "notify" | "notify_on_cap" => match v.parse() {
+                                    Ok(b) => cs.notify = Some(b),
+                                    Err(_) => {
+                                        eprintln!("config: notify must be true/false, got '{v}'");
+                                        std::process::exit(2);
+                                    }
+                                },
                                 other => {
-                                    eprintln!("config: unknown key '{other}' (keys: interval, width, sl, sl_colors, sl_ascii, burst, burst_on)");
+                                    eprintln!("config: unknown key '{other}' (keys: interval, width, sl, sl_colors, sl_ascii, burst, burst_on, notify)");
                                     std::process::exit(2);
                                 }
                             }
@@ -197,7 +224,54 @@ pub fn parse_args() -> Args {
             }
         }
     }
+    if saw_once && saw_watch {
+        eprintln!("cannot combine -1/--once with -W/--watch");
+        std::process::exit(2);
+    }
     a
+}
+
+/// Parse a refresh duration: bare seconds ("30"), or with a unit suffix
+/// ("30s", "5m", "1h", "2d"). Returns whole seconds.
+pub fn parse_duration(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let (num, mult) = match s.chars().last()? {
+        's' | 'S' => (&s[..s.len() - 1], 1u64),
+        'm' | 'M' => (&s[..s.len() - 1], 60),
+        'h' | 'H' => (&s[..s.len() - 1], 3600),
+        'd' | 'D' => (&s[..s.len() - 1], 86400),
+        _ => (s, 1),
+    };
+    num.parse::<u64>().ok().and_then(|n| n.checked_mul(mult))
+}
+
+/// Parse a UTC offset "+05:30" / "-08:00" / "+0530" / "-8" → seconds east.
+pub fn parse_tz(s: &str) -> Option<i64> {
+    let (sign, rest) = if let Some(t) = s.strip_prefix('-') {
+        (-1i64, t)
+    } else if let Some(t) = s.strip_prefix('+') {
+        (1i64, t)
+    } else {
+        return None;
+    };
+    if rest.is_empty() {
+        return None;
+    }
+    let (h, m) = match rest.split_once(':') {
+        Some((h, m)) => (h.parse::<i64>().ok()?, m.parse::<i64>().ok()?),
+        None if rest.len() == 4 => {
+            let (h, m) = rest.split_at(2);
+            (h.parse::<i64>().ok()?, m.parse::<i64>().ok()?)
+        }
+        None => (rest.parse::<i64>().ok()?, 0),
+    };
+    if h > 14 || m > 59 {
+        return None;
+    }
+    Some(sign * (h * 3600 + m * 60))
 }
 
 pub fn usage() {
@@ -220,17 +294,18 @@ Usage: cmduse [options]           Live plan dashboard (watch mode)
 
 Options:
   -1, --once            Fetch once, print, exit (no watch)
-  -W, --watch           Force watch mode (default; overrides an earlier -1)
+  -W, --watch           Force watch mode (default; conflicts with -1)
   -p, --plain           No colors / no live redraw (for scripts, pipes)
-  -i, --interval <s>    Refresh interval in seconds (default: config or 5)
+  -i, --interval <dur>  Refresh interval (default: config or 5s). Accepts a
+                        unit suffix: 30s, 5m, 1h (bare number = seconds)
   -w, --bar-width <n>   Progress bar width in chars (default: config or 20)
   -b, --bursts <n>      Spend-burst sparkline samples (default: 40; hide when
                         idle via config burst_on=false)
       --json            Machine-readable JSON output where supported
       --gated           models: filter to what the current plan allows
+      --tz <±HH:MM>     daily/hourly: bucket by this UTC offset instead of UTC
       --days <n>        daily: number of days back (default 7, max 365)
       --hours <n>       hourly: number of hours back (default 24, max 168)
-      --json            Machine-readable JSON output
       --local           daily: use local CLI logs only (skip account API)
   -V, --version         Print version
   -h, --help            This help

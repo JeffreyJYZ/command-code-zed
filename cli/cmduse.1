@@ -165,9 +165,10 @@ fiveHour, weekly, summary, error) instead of the text dashboard.
 No ANSI colors and no live redraw (used with \fB\-1\fR for scripts/pipes).
 In watch mode it keeps the plain text render but still redraws in place.
 .TP
-.B \-i, \-\-interval \fIs\fR
-Refresh interval seconds (1\(en86400).  Overrides config
-\fBinterval_secs\fR.
+.B \-i, \-\-interval \fIdur\fR
+Refresh interval (1\(en86400 seconds).  Accepts a unit suffix:
+.I 30s ", " 5m ", " 1h ", " 2d
+(bare number = seconds).  Overrides config \fBinterval_secs\fR.
 .TP
 .B \-w, \-\-bar\-width \fIn\fR
 Progress bar width (5\(en200).  Overrides config \fBbar_width\fR.
@@ -175,6 +176,11 @@ Progress bar width (5\(en200).  Overrides config \fBbar_width\fR.
 .B \-b, \-\-bursts \fIn\fR
 Show the spend\-burst sparkline for this run with N samples (5\(en240);
 implies it on regardless of config.
+.TP
+.B \-\-tz \fI\(+-HH:MM\fR
+.BR daily " / " hourly :
+bucket by this fixed UTC offset instead of UTC.  Accepts
+.I +05:30 ", " -08:00 ", " +0530 ", " -8 .
 .TP
 .B \-\-days \fIn\fR
 .BR daily : number of days back (1\(en365).
@@ -191,11 +197,17 @@ keep only models the current plan may use.  Uses the plan id plus purchased
 and free credits; purchased/free credits unlock everything, an unknown plan
 shows everything.  The gate is a close approximation of the API's (the
 server enforces the real limit), so a misclassification could show or hide
-one model.
+one model.  With \fB\-\-json\fR it does not filter: every model is emitted
+with additional \fBallowed\fR (bool) and \fBreason\fR (string) fields.
 .TP
 .B \-W, \-\-watch
-Force watch mode; overrides an earlier
-.BR \-1 .
+Force watch mode (the default).  Conflicts with
+.BR \-1 ;
+supplying both exits 2.
+.TP
+.B watch
+Bare\-word alias for
+.BR \-W .
 .TP
 .B \-\-local
 .BR daily " / " hourly :
@@ -349,14 +361,16 @@ they come from the API
 response and must not be derived client\-side.
 .SH STATUSLINE
 The statusline template supports the placeholders
-.I {plan} {credits} {cap} {credits_bar} {5h_bar} {5h_pct} {5h_used} {5h_cap}
-.I {wk_bar} {wk_pct} {wk_used} {wk_cap}
+.I {plan} {credits} {cap} {credits_bar} {5h_bar} {5h_pct} {5h_used} {5h_cap} {5h_eta}
+.I {wk_bar} {wk_pct} {wk_used} {wk_cap} {wk_eta}
 . Unknown placeholders are dropped; an unclosed brace passes through;
 multi\-line templates are allowed.  \fBsl_colors=false\fR strips ANSI after
 rendering; \fBsl_ascii=true\fR renders bars with "#" and "\-" instead of the
 box glyphs.  {credits} is remaining monthly credits, {cap} the plan monthly
-cap.  The same template engine renders both the statusline subcommand and
-any statusline template in a shell prompt.
+cap.  {5h_eta} and {wk_eta} render the pace warning text ("on pace to hit cap
+in 2h 3m") or an empty string when no warning applies.  The same template
+engine renders both the statusline subcommand and any statusline template in
+a shell prompt.
 .SH API ENDPOINTS
 All requests go to
 .IR https://api.commandcode.ai ,
@@ -417,6 +431,10 @@ boolean, default true.
 burst_samples
 integer 5\(en240, default 40.
 .TP
+notify_on_cap
+boolean, default true.  In watch mode fire a desktop notification once when a
+window crosses into overflow.
+.TP
 statusline_template
 string, default "{plan} {credits}/{cap} . 5h {5h_bar} . wk {wk_bar}".
 .TP
@@ -431,10 +449,6 @@ merged struct, so unknown keys are actually dropped on the next
 .I "config set"
 write; hand\-editing extra keys is tolerated until a config set rewrites the
 file).
-.TP
-.I ~/.cache/cmd\-usage/trend.json
-Spend delta history (JSON array of floats), appended every refresh while the
-sparkline is enabled.
 .TP
 .I ~/.cache/cmd\-usage/last\-check
 Epoch seconds of the last crates.io update check; controls the once\-per\-day

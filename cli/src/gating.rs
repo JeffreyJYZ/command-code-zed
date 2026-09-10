@@ -59,18 +59,33 @@ fn rule(plan_id: &str) -> Option<Rule> {
 }
 
 pub fn allowed(model_id: &str, plan_id: &str, unlocked: bool) -> bool {
-    if unlocked || plan_id.is_empty() {
-        return true;
+    check(model_id, plan_id, unlocked).allowed
+}
+
+/// Access decision plus a short human reason (for `models --gated --json`).
+pub struct Access {
+    pub allowed: bool,
+    pub reason: &'static str,
+}
+
+pub fn check(model_id: &str, plan_id: &str, unlocked: bool) -> Access {
+    if unlocked {
+        return Access { allowed: true, reason: "credits unlock all models" };
     }
-    let Some(r) = rule(plan_id) else { return true };
+    if plan_id.is_empty() {
+        return Access { allowed: true, reason: "unknown plan" };
+    }
+    let Some(r) = rule(plan_id) else {
+        return Access { allowed: true, reason: "plan has no restrictions" };
+    };
     let full = model_id.to_lowercase();
     if r.blocked.iter().any(|b| *b == full) {
-        return false;
+        return Access { allowed: false, reason: "blocked for this plan" };
     }
     if r.open_only && category(model_id) == Category::Premium {
-        return false;
+        return Access { allowed: false, reason: "premium model, plan is open-models-only" };
     }
-    true
+    Access { allowed: true, reason: "allowed" }
 }
 
 #[cfg(test)]
@@ -104,5 +119,14 @@ mod tests {
     fn unknown_plan_allows_all() {
         assert!(allowed("claude-opus-5", "individual-max", false));
         assert!(allowed("claude-opus-5", "", false));
+    }
+
+    #[test]
+    fn check_reports_reason() {
+        assert_eq!(check("claude-opus-5", "individual-goat", false).reason, "premium model, plan is open-models-only");
+        assert!(!check("claude-opus-5", "individual-goat", false).allowed);
+        let a = check("claude-opus-5", "individual-goat", true);
+        assert!(a.allowed);
+        assert_eq!(a.reason, "credits unlock all models");
     }
 }

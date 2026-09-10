@@ -8,6 +8,7 @@ pub struct Config {
     pub bar_width: usize,
     pub burst_enabled: bool,
     pub burst_samples: usize,
+    pub notify_on_cap: bool,
     pub statusline_template: String,
     pub statusline_colors: bool,
     pub statusline_ascii: bool,
@@ -20,6 +21,7 @@ impl Default for Config {
             bar_width: 20,
             burst_enabled: true,
             burst_samples: 40,
+            notify_on_cap: true,
             statusline_template: "{plan} {credits}/{cap} \u{b7} 5h {5h_bar} \u{b7} wk {wk_bar}".into(),
             statusline_colors: true,
             statusline_ascii: false,
@@ -60,6 +62,7 @@ pub fn set(
     sl_ascii: Option<bool>,
     burst_enabled: Option<bool>,
     burst_samples: Option<usize>,
+    notify_on_cap: Option<bool>,
 ) -> Result<(), String> {
     if interval_secs.is_none()
         && bar_width.is_none()
@@ -68,6 +71,7 @@ pub fn set(
         && sl_ascii.is_none()
         && burst_enabled.is_none()
         && burst_samples.is_none()
+        && notify_on_cap.is_none()
     {
         return Err("nothing to set".into());
     }
@@ -93,6 +97,7 @@ pub fn set(
         bar_width: bar_width.unwrap_or(cur.bar_width),
         burst_enabled: burst_enabled.unwrap_or(cur.burst_enabled),
         burst_samples: burst_samples.unwrap_or(cur.burst_samples),
+        notify_on_cap: notify_on_cap.unwrap_or(cur.notify_on_cap),
         statusline_template: sl_template.unwrap_or_else(|| cur.statusline_template.clone()),
         statusline_colors: sl_colors.unwrap_or(cur.statusline_colors),
         statusline_ascii: sl_ascii.unwrap_or(cur.statusline_ascii),
@@ -109,6 +114,7 @@ pub fn set(
     println!("  bar_width           = {}", cfg.bar_width);
     println!("  burst_enabled       = {}", cfg.burst_enabled);
     println!("  burst_samples       = {}", cfg.burst_samples);
+    println!("  notify_on_cap       = {}", cfg.notify_on_cap);
     println!("  statusline_template = {}", cfg.statusline_template);
     println!("  statusline_colors   = {}", cfg.statusline_colors);
     println!("  statusline_ascii    = {}", cfg.statusline_ascii);

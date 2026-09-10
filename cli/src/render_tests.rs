@@ -194,11 +194,14 @@ fn pace_warns_only_after_10pct_elapsed() {
 
 #[test]
 fn plans_table_marks_current_by_exact_name() {
-    let out = plans_table("individual-goat");
+    let out = plans_table("individual-goat", false);
     assert!(out.contains("*GOAT"));
     assert!(!out.contains("*Go "), "substring 'go' must not mark Go: {out}");
-    let out = plans_table("unknown-plan");
+    let out = plans_table("unknown-plan", false);
     assert!(!out.contains('*'), "no current plan → no mark: {out}");
+    // colors=true bolds the current row
+    let out = plans_table("individual-goat", true);
+    assert!(out.contains("\x1b[1m*GOAT"));
 }
 
 #[test]
@@ -317,6 +320,8 @@ fn statusline_templates() {
         monthly_cap: 70.0,
         five_hour: &h5,
         weekly: &wk,
+        five_hour_eta: None,
+        weekly_eta: None,
         bar_width: 10,
         colors: tpl_colors,
         ascii,
@@ -373,6 +378,22 @@ fn statusline_templates() {
     let out = render_statusline("{plan}\n{credits_bar}", &d0);
     assert!(out.contains('\n'));
 
+    // eta placeholders render when set, empty otherwise
+    assert_eq!(render_statusline("{5h_eta}", &d0), "");
+    let deta = StatusData {
+        plan: "GOAT",
+        monthly_remaining: 1.0,
+        monthly_cap: 70.0,
+        five_hour: &h5,
+        weekly: &wk,
+        five_hour_eta: Some("on pace to hit cap in 1h 2m".into()),
+        weekly_eta: None,
+        bar_width: 10,
+        colors: false,
+        ascii: false,
+    };
+    assert_eq!(render_statusline("{5h_eta}|{wk_eta}", &deta), "on pace to hit cap in 1h 2m|");
+
     // zero-cap plan: bars show 0%, no divide-by-zero
     let h5z: Option<(f64, f64)> = None;
     let dz = StatusData {
@@ -381,6 +402,8 @@ fn statusline_templates() {
         monthly_cap: 0.0,
         five_hour: &h5z,
         weekly: &h5z,
+        five_hour_eta: None,
+        weekly_eta: None,
         bar_width: 10,
         colors: true,
         ascii: false,

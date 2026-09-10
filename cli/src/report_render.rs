@@ -33,6 +33,9 @@ pub struct StatusData<'a> {
     pub monthly_cap: f64,
     pub five_hour: &'a Option<(f64, f64)>,
     pub weekly: &'a Option<(f64, f64)>,
+    /// Pre-rendered "on pace to hit cap in …" text, if a pace warning applies.
+    pub five_hour_eta: Option<String>,
+    pub weekly_eta: Option<String>,
     pub bar_width: usize,
     pub colors: bool,
     pub ascii: bool,
@@ -46,8 +49,10 @@ pub struct StatusData<'a> {
 ///   {5h_bar}        5-hour window bar
 ///   {5h_pct}        5-hour used %
 ///   {5h_used} {5h_cap}
+///   {5h_eta}        5-hour pace ETA ("on pace to hit cap in 2h 3m") or empty
 ///   {wk_bar}        weekly bar
 ///   {wk_pct} {wk_used} {wk_cap}
+///   {wk_eta}        weekly pace ETA or empty
 ///   | or newline    segment separators
 /// Unknown placeholders are dropped. Plain text passes through.
 pub fn render_statusline(tpl: &str, d: &StatusData) -> String {
@@ -102,10 +107,12 @@ fn placeholder(key: &str, d: &StatusData) -> String {
         "5h_pct" => format!("{:.0}%", pct_of(d.five_hour)),
         "5h_used" => money(d.five_hour.map(|(u, _)| u).unwrap_or(0.0)),
         "5h_cap" => money(d.five_hour.map(|(_, c)| c).unwrap_or(0.0)),
+        "5h_eta" => d.five_hour_eta.clone().unwrap_or_default(),
         "wk_bar" => bar(pct_of(d.weekly)),
         "wk_pct" => format!("{:.0}%", pct_of(d.weekly)),
         "wk_used" => money(d.weekly.map(|(u, _)| u).unwrap_or(0.0)),
         "wk_cap" => money(d.weekly.map(|(_, c)| c).unwrap_or(0.0)),
+        "wk_eta" => d.weekly_eta.clone().unwrap_or_default(),
         _ => String::new(),
     }
 }

@@ -40,6 +40,7 @@ fn main() {
             cs.sl_ascii,
             cs.burst_on,
             cs.bursts,
+            cs.notify,
         ) {
             eprintln!("error: {e}");
             std::process::exit(1);
@@ -54,7 +55,7 @@ fn main() {
             let data_source = if args.local {
                 None
             } else {
-                api::api_key().ok().map(|k| reports::load_account_daily(args.last.unwrap_or(7), &k))
+                api::api_key().ok().map(|k| reports::load_account_daily(args.last.unwrap_or(7), &k, args.tz.unwrap_or(0)))
             };
             match data_source {
                 Some(Ok(by_day)) => {
@@ -83,7 +84,7 @@ fn main() {
                         std::process::exit(1);
                     }
                 };
-                match reports::load_account_hourly(args.hours.unwrap_or(24), &key) {
+                match reports::load_account_hourly(args.hours.unwrap_or(24), &key, args.tz.unwrap_or(0)) {
                     Ok(r) => r,
                     Err(e) => {
                         eprintln!("error: {e}");
@@ -91,14 +92,14 @@ fn main() {
                     }
                 }
             };
-            print!(
-                "{}",
-                report_render::hourly_table(
-                    &rows,
-                    args.json,
-                    if args.local { "local, CLI sessions" } else { "all harnesses, UTC" }
-                )
-            );
+            let subtitle = if args.local {
+                "local, CLI sessions".to_string()
+            } else if let Some(tz) = args.tz {
+                format!("all harnesses, UTC{}{:02}:{:02}", if tz < 0 { '-' } else { '+' }, tz.abs() / 3600, (tz.abs() % 3600) / 60)
+            } else {
+                "all harnesses, UTC".to_string()
+            };
+            print!("{}", report_render::hourly_table(&rows, args.json, &subtitle));
             return;
         }
         Some(cli::SubCmd::Model) => {
@@ -141,6 +142,7 @@ fn main() {
     } else {
         0
     };
+    let notify_on_cap = cfg.notify_on_cap;
 
     if args.once {
         let s = snapshot::snapshot();
@@ -176,6 +178,9 @@ fn main() {
     // no disk persistence — a fresh run shows a fresh trend, never old data.
     let mut history: Vec<f64> = Vec::new();
     let mut history_used: Vec<f64> = Vec::new(); // raw cumulative 5h spend
+    // cap-hit notifications: fire once on the rising edge into "exceeded"
+    let mut was_exceeded_5h = false;
+    let mut was_exceeded_wk = false;
     loop {
         let s = snapshot::snapshot();
         let (rows, cols) = term_size().unwrap_or((0, 0));
@@ -204,6 +209,18 @@ fn main() {
             if history.len() > burst_cap {
                 history.remove(0);
             }
+        }
+        if notify_on_cap {
+            let ex5 = s.credits.window_limits.five_hour.as_ref().map(|w| w.exceeded).unwrap_or(false);
+            let exwk = s.credits.window_limits.weekly.as_ref().map(|w| w.exceeded).unwrap_or(false);
+            if ex5 && !was_exceeded_5h {
+                notify_cap("5-hour");
+            }
+            if exwk && !was_exceeded_wk {
+                notify_cap("weekly");
+            }
+            was_exceeded_5h = ex5;
+            was_exceeded_wk = exwk;
         }
         let text = if compact {
             compact_dashboard(&s, if burst_on { &history } else { &[] })
@@ -235,6 +252,27 @@ fn main() {
             out.flush().ok();
         }
     }
+}
+
+/// Fire a desktop notification that a spend window hit its cap. Best-effort:
+/// runs on a detached thread and silently no-ops if the OS tool is missing.
+/// macOS uses osascript, Linux notify-send.
+fn notify_cap(window: &str) {
+    let window = window.to_string();
+    std::thread::spawn(move || {
+        let title = "cmduse: limit exceeded";
+        let body = format!("Command Code {window} window is over its cap");
+        if cfg!(target_os = "macos") {
+            let script = format!(
+                "display notification \"{}\" with title \"{}\"",
+                body.replace('\\', "\\\\").replace('"', "\\\""),
+                title
+            );
+            let _ = std::process::Command::new("osascript").arg("-e").arg(script).status();
+        } else if cfg!(target_os = "linux") {
+            let _ = std::process::Command::new("notify-send").arg(title).arg(&body).status();
+        }
+    });
 }
 
 /// Minimal one-line dashboard for windows too small for the full frame:
@@ -414,6 +452,27 @@ fn models_cmd(args: &cli::Args) {
     };
     match api::models(&key) {
         Ok(list) => {
+            if args.json {
+                for m in &list {
+                    if args.gated {
+                        // annotate every model with the gating verdict
+                        let a = gating::check(&m.id, &plan_id, unlocked);
+                        let line = serde_json::json!({
+                            "id": m.id,
+                            "name": m.name,
+                            "context_length": m.context_length,
+                            "owned_by": m.owned_by,
+                            "allowed": a.allowed,
+                            "reason": a.reason,
+                        });
+                        println!("{line}");
+                    } else {
+                        let line = serde_json::to_string(m).unwrap_or_else(|_| "{}".into());
+                        println!("{line}");
+                    }
+                }
+                return;
+            }
             let list: Vec<_> = if args.gated {
                 list.into_iter()
                     .filter(|m| gating::allowed(&m.id, &plan_id, unlocked))
@@ -421,13 +480,6 @@ fn models_cmd(args: &cli::Args) {
             } else {
                 list
             };
-            if args.json {
-                for m in &list {
-                    let line = serde_json::to_string(m).unwrap_or_else(|_| "{}".into());
-                    println!("{line}");
-                }
-                return;
-            }
             if list.is_empty() {
                 println!("no models returned");
                 return;
@@ -465,7 +517,8 @@ fn plans_cmd(args: &cli::Args) {
     if args.json {
         print!("{}", render::plans_json(&current));
     } else {
-        print!("{}", render::plans_table(&current));
+        use std::io::IsTerminal;
+        print!("{}", render::plans_table(&current, std::io::stdout().is_terminal()));
     }
 }
 
@@ -502,12 +555,23 @@ fn statusline_cmd(args: &cli::Args) {
         .weekly
         .as_ref()
         .map(|w| (w.used, w.cap));
+    // pace ETAs for the {5h_eta}/{wk_eta} placeholders
+    let now = s.now;
+    let eta_of = |w: &Option<api::Window>, dur: u64| -> Option<String> {
+        let w = w.as_ref()?;
+        let secs = cmduse_core::pace_eta(w.reset_at, dur, w.used, w.cap, now)?;
+        Some(format!("on pace to hit cap in {}", cmduse_core::rel_time(Some(secs * 1000.0), Some(now))))
+    };
+    let h5_eta = eta_of(&s.credits.window_limits.five_hour, 5 * 3600);
+    let wk_eta = eta_of(&s.credits.window_limits.weekly, 7 * 86400);
     let d = report_render::StatusData {
         plan,
         monthly_remaining: s.credits.credits.monthly_credits,
         monthly_cap: cap,
         five_hour: &h5,
         weekly: &wk,
+        five_hour_eta: h5_eta,
+        weekly_eta: wk_eta,
         bar_width: cfg.bar_width.min(30),
         colors: cfg.statusline_colors,
         ascii: cfg.statusline_ascii,

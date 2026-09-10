@@ -50,19 +50,26 @@ pub const PLANS: [(&str, &str, &str, &str, &str); 7] = [
 ];
 
 /// Plan comparison table (mirrors the opencode plugin's plans table). The
-/// current plan row is shown with a leading "*".
-pub fn plans_table(current_plan_id: &str) -> String {
+/// current plan row is shown with a leading "*" and, when `colors`, in bold.
+pub fn plans_table(current_plan_id: &str, colors: bool) -> String {
     let mine = plan_name(current_plan_id);
+    let (hl, rst) = if colors { (BOLD, RESET) } else { ("", "") };
     let mut o = format!(
         "{BOLD}{:<10} {:>8} {:>11} {:>8} {:>8}{RESET}\n",
         "Plan", "Price", "Credits/mo", "5-hour", "Weekly"
     );
     for (name, price, monthly, h5, wk) in PLANS {
-        let mark = if name == mine { "*" } else { " " };
-        o.push_str(&format!(
-            "{mark}{:<9} {:>6}/mo {:>11} {:>8} {:>8}\n",
-            name, price, monthly, h5, wk
-        ));
+        if name == mine {
+            o.push_str(&format!(
+                "{hl}*{:<9} {:>6}/mo {:>11} {:>8} {:>8}{rst}\n",
+                name, price, monthly, h5, wk
+            ));
+        } else {
+            o.push_str(&format!(
+                " {:<9} {:>6}/mo {:>11} {:>8} {:>8}\n",
+                name, price, monthly, h5, wk
+            ));
+        }
     }
     o.push_str("\nWindows throttle only included monthly credits; on-demand (`/extra`) credits are never throttled.\n");
     o
