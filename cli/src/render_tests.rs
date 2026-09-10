@@ -193,6 +193,37 @@ fn pace_warns_only_after_10pct_elapsed() {
 }
 
 #[test]
+fn plans_table_marks_current_by_exact_name() {
+    let out = plans_table("individual-goat");
+    assert!(out.contains("*GOAT"));
+    assert!(!out.contains("*Go "), "substring 'go' must not mark Go: {out}");
+    let out = plans_table("unknown-plan");
+    assert!(!out.contains('*'), "no current plan → no mark: {out}");
+}
+
+#[test]
+fn plans_json_marks_current() {
+    let out = plans_json("individual-goat");
+    assert!(out.starts_with('[') && out.ends_with(']'));
+    assert!(out.contains("\"name\":\"GOAT\",\"price\":\"$10\",\"creditsMonthly\":\"$70\",\"fiveHour\":\"$14\",\"weekly\":\"$35\",\"current\":true"));
+    assert!(out.contains("\"name\":\"Go\",\"price\":\"$1\""));
+}
+
+#[test]
+fn render_json_is_valid_and_complete() {
+    let s = snapshot_fixture();
+    let out = render_json(&s);
+    assert!(out.starts_with('{') && out.ends_with('}'));
+    assert!(out.contains("\"plan\":\"GOAT\""));
+    assert!(out.contains("\"monthlyCap\":70.00"));
+    assert!(out.contains("\"fiveHour\":{"));
+    assert!(out.contains("\"error\":null"));
+    // parse round-trip
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["plan"], "GOAT");
+}
+
+#[test]
 fn plain_render_contains_sections() {
     let s = snapshot_fixture();
     let out = render_plain(&s, 20);

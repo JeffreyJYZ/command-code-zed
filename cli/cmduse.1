@@ -21,6 +21,9 @@ cmduse \- live Command Code (commandcode.ai) usage dashboard and reporter
 [\fB\-\-json\fR]
 .br
 .B cmduse models
+[\fB\-\-json\fR] [\fB\-\-gated\fR]
+.br
+.B cmduse plans
 [\fB\-\-json\fR]
 .br
 .B cmduse statusline
@@ -92,12 +95,21 @@ Local usage grouped by project/session directory, same offline file.
 .B models
 Live model list from the provider endpoint
 .I GET https://api.commandcode.ai/provider/v1/models
-\-\- the same source the account plan gating uses.  Unfiltered by plan.
+\-\- the same source the account plan gating uses.  Unfiltered by plan
+unless \fB\-\-gated\fR is given, in which case only the current plan's
+allowed models are shown (see the OPTIONS entry for \fB\-\-gated\fR).
 Text rows are sorted by display name as
 .IR "NAME  CONTEXT  ID" ,
 where CONTEXT is a human K/M count or "\-" when the API omits it.
 \fB\-\-json\fR prints one JSON object per model per line with keys id, name,
 context_length, owned_by.
+.TP
+.B plans
+Print the plan comparison table (name, price, monthly credits, 5\-hour and
+weekly caps), marking the current plan with a leading "*" matched by exact
+display name, so "individual\-goat" does not mark the Go row.  The current
+plan is fetched best\-effort; with no key or network no row is marked.
+For the JSON form, see \fB\-\-json\fR under OPTIONS.
 .TP
 .B statusline
 Fetch once and print a single compact line (no trailing newline) built from
@@ -145,7 +157,9 @@ message and exit 2; nothing is written.
 .TP
 .B \-1, \-\-once
 Fetch once, print, exit.  Without this, watch mode runs forever until
-Ctrl\-C.
+Ctrl\-C.  With \fB\-\-json\fR it prints one JSON object (plan, status,
+periodEnd, monthlyCredits, monthlyCap, purchasedCredits, freeCredits,
+fiveHour, weekly, summary, error) instead of the text dashboard.
 .TP
 .B \-p, \-\-plain
 No ANSI colors and no live redraw (used with \fB\-1\fR for scripts/pipes).
@@ -170,6 +184,18 @@ implies it on regardless of config.
 .TP
 .B \-\-json
 Machine\-readable output where the subcommand supports it.
+.TP
+.B \-\-gated
+.BR models :
+keep only models the current plan may use.  Uses the plan id plus purchased
+and free credits; purchased/free credits unlock everything, an unknown plan
+shows everything.  The gate is a close approximation of the API's (the
+server enforces the real limit), so a misclassification could show or hide
+one model.
+.TP
+.B \-W, \-\-watch
+Force watch mode; overrides an earlier
+.BR \-1 .
 .TP
 .B \-\-local
 .BR daily " / " hourly :

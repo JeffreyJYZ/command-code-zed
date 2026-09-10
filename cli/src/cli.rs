@@ -12,6 +12,7 @@ pub struct Args {
     pub hours: Option<usize>,
     pub json: bool,
     pub local: bool,
+    pub gated: bool,
 }
 
 #[derive(Debug, Default)]
@@ -33,6 +34,7 @@ pub enum SubCmd {
     Session,
     Statusline,
     Models,
+    Plans,
 }
 
 pub fn parse_args() -> Args {
@@ -49,12 +51,14 @@ pub fn parse_args() -> Args {
         hours: None,
         json: false,
         local: false,
+        gated: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "-1" | "--once" => a.once = true,
             "-p" | "--plain" => a.plain = true,
+            "-W" | "--watch" => a.once = false, // explicit default mode
             "-h" | "--help" | "help" => a.help = true,
             "-V" | "--version" | "version" => {
                 println!("cmduse {}", env!("CARGO_PKG_VERSION"));
@@ -62,6 +66,7 @@ pub fn parse_args() -> Args {
             }
             "--json" => a.json = true,
             "--local" => a.local = true,
+            "--gated" => a.gated = true,
             "-i" | "--interval" => {
                 let v = it.next().expect("interval needs a value");
                 match v.parse::<u64>() {
@@ -111,6 +116,7 @@ pub fn parse_args() -> Args {
             "model" => a.subcmd = Some(SubCmd::Model),
             "session" | "sessions" | "project" => a.subcmd = Some(SubCmd::Session),
             "models" => a.subcmd = Some(SubCmd::Models),
+            "plans" => a.subcmd = Some(SubCmd::Plans),
             "statusline" => a.subcmd = Some(SubCmd::Statusline),
             "config" => {
                 // config set [interval=<s>] [width=<n>]
@@ -208,16 +214,20 @@ Usage: cmduse [options]           Live plan dashboard (watch mode)
        cmduse model [--json]      Local usage by model
        cmduse session [--json]    Local usage by project/session
        cmduse models              Live model list from the Command Code API
+       cmduse plans               Plan comparison table
        cmduse statusline          Compact one-liner for prompts/tmux
        cmduse config set interval=<s> width=<n> burst_on=true burst=40
 
 Options:
   -1, --once            Fetch once, print, exit (no watch)
+  -W, --watch           Force watch mode (default; overrides an earlier -1)
   -p, --plain           No colors / no live redraw (for scripts, pipes)
   -i, --interval <s>    Refresh interval in seconds (default: config or 5)
   -w, --bar-width <n>   Progress bar width in chars (default: config or 20)
   -b, --bursts <n>      Spend-burst sparkline samples (default: 40; hide when
                         idle via config burst_on=false)
+      --json            Machine-readable JSON output where supported
+      --gated           models: filter to what the current plan allows
       --days <n>        daily: number of days back (default 7, max 365)
       --hours <n>       hourly: number of hours back (default 24, max 168)
       --json            Machine-readable JSON output

@@ -2,6 +2,7 @@ mod api;
 mod cli;
 mod update_check;
 mod config;
+mod gating;
 mod render;
 mod report_render;
 mod reports;
@@ -118,6 +119,10 @@ fn main() {
             models_cmd(&args);
             return;
         }
+        Some(cli::SubCmd::Plans) => {
+            plans_cmd(&args);
+            return;
+        }
         None => {}
     }
 
@@ -139,7 +144,9 @@ fn main() {
 
     if args.once {
         let s = snapshot::snapshot();
-        if args.plain {
+        if args.json {
+            println!("{}", render::render_json(&s));
+        } else if args.plain {
             print!("{}", render::render_plain(&s, bar_width));
         } else {
             print!("{}", render::render(&s, bar_width));
@@ -199,7 +206,7 @@ fn main() {
             }
         }
         let text = if compact {
-            compact_dashboard(&s)
+            compact_dashboard(&s, if burst_on { &history } else { &[] })
         } else if args.plain {
             render::render_plain(&s, bar_width)
         } else {
@@ -232,8 +239,10 @@ fn main() {
 
 /// Minimal one-line dashboard for windows too small for the full frame:
 /// plan + remaining monthly credits (clip handles the rest). Stays stable
-/// where the full 14-row dashboard would scroll every refresh.
-fn compact_dashboard(s: &crate::render::Snapshot) -> String {
+/// where the full 14-row dashboard would scroll every refresh. When the
+/// spend-burst sparkline is active it is inlined at the end of the same line
+/// (clip trims it first on very narrow windows).
+fn compact_dashboard(s: &crate::render::Snapshot, history: &[f64]) -> String {
     use crate::render::plan_name;
     let cap = cmduse_core::plan_monthly_cap(&s.sub.plan_id);
     let cap_txt = cap.map(cmduse_core::money).unwrap_or_else(|| "-".into());
@@ -250,7 +259,12 @@ fn compact_dashboard(s: &crate::render::Snapshot) -> String {
     } else {
         format!(" · {}", s.sub.status)
     };
-    format!("{BOLD}{}{RESET} {rem_txt}/{cap_txt} · 5h {h5}{status}\n", plan_name(&s.sub.plan_id))
+    let spark = if history.len() >= 2 && history.iter().any(|v| *v > 0.0) {
+        format!(" {DIM}{}{RESET}", crate::render::sparkline(history))
+    } else {
+        String::new()
+    };
+    format!("{BOLD}{}{RESET} {rem_txt}/{cap_txt} · 5h {h5}{status}{spark}\n", plan_name(&s.sub.plan_id))
 }
 
 /// Terminal (rows, cols) from `stty size`. None when not a tty or the probe
@@ -386,8 +400,27 @@ fn models_cmd(args: &cli::Args) {
             std::process::exit(1);
         }
     };
+    // --gated needs the plan + credits to know what the account may use.
+    let (plan_id, unlocked) = if args.gated {
+        match (api::subscriptions(&key), api::credits(&key)) {
+            (Ok(s), Ok(c)) => (
+                s.plan_id,
+                c.credits.purchased_credits > 0.0 || c.credits.free_credits > 0.0,
+            ),
+            _ => (String::new(), true), // unknown → show everything
+        }
+    } else {
+        (String::new(), true)
+    };
     match api::models(&key) {
         Ok(list) => {
+            let list: Vec<_> = if args.gated {
+                list.into_iter()
+                    .filter(|m| gating::allowed(&m.id, &plan_id, unlocked))
+                    .collect()
+            } else {
+                list
+            };
             if args.json {
                 for m in &list {
                     let line = serde_json::to_string(m).unwrap_or_else(|_| "{}".into());
@@ -419,6 +452,20 @@ fn models_cmd(args: &cli::Args) {
             eprintln!("error: {e}");
             std::process::exit(1);
         }
+    }
+}
+
+fn plans_cmd(args: &cli::Args) {
+    // current plan id is best-effort: without a key/network, show no mark.
+    let current = api::api_key()
+        .ok()
+        .and_then(|k| api::subscriptions(&k).ok())
+        .map(|s| s.plan_id)
+        .unwrap_or_default();
+    if args.json {
+        print!("{}", render::plans_json(&current));
+    } else {
+        print!("{}", render::plans_table(&current));
     }
 }
 

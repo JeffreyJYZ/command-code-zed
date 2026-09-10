@@ -38,6 +38,94 @@ pub fn rel_time(reset_at: Option<f64>, now: u64) -> String {
     cmduse_core::rel_time(reset_at, Some(now))
 }
 
+/// Plan comparison data: (name, price, credits/mo, 5-hour, weekly).
+pub const PLANS: [(&str, &str, &str, &str, &str); 7] = [
+    ("Go", "$1", "$10", "$3", "$6"),
+    ("GOAT", "$10", "$70", "$14", "$35"),
+    ("Pro", "$20", "$80", "$16", "$40"),
+    ("Provider", "$15", "PAYG", "—", "—"),
+    ("Max 10x", "$100", "$150", "$45", "$90"),
+    ("Max 20x", "$200", "$300", "$90", "$180"),
+    ("Team Pro", "$40", "$40", "$12", "$24"),
+];
+
+/// Plan comparison table (mirrors the opencode plugin's plans table). The
+/// current plan row is shown with a leading "*".
+pub fn plans_table(current_plan_id: &str) -> String {
+    let mine = plan_name(current_plan_id);
+    let mut o = format!(
+        "{BOLD}{:<10} {:>8} {:>11} {:>8} {:>8}{RESET}\n",
+        "Plan", "Price", "Credits/mo", "5-hour", "Weekly"
+    );
+    for (name, price, monthly, h5, wk) in PLANS {
+        let mark = if name == mine { "*" } else { " " };
+        o.push_str(&format!(
+            "{mark}{:<9} {:>6}/mo {:>11} {:>8} {:>8}\n",
+            name, price, monthly, h5, wk
+        ));
+    }
+    o.push_str("\nWindows throttle only included monthly credits; on-demand (`/extra`) credits are never throttled.\n");
+    o
+}
+
+/// Plan table as JSON: array of {name, price, creditsMonthly, fiveHour, weekly, current}.
+pub fn plans_json(current_plan_id: &str) -> String {
+    let mine = plan_name(current_plan_id);
+    let items: Vec<String> = PLANS
+        .iter()
+        .map(|(name, price, monthly, h5, wk)| {
+            format!(
+                "{{\"name\":\"{name}\",\"price\":\"{price}\",\"creditsMonthly\":\"{monthly}\",\"fiveHour\":\"{h5}\",\"weekly\":\"{wk}\",\"current\":{}}}",
+                name == &mine
+            )
+        })
+        .collect();
+    format!("[{}]", items.join(","))
+}
+
+/// Machine-readable dashboard, one JSON object. Nested windows mirror the
+/// CLI's own JSON (camelCase fields).
+pub fn render_json(s: &Snapshot) -> String {
+    fn win(w: &Option<crate::api::Window>) -> String {
+        match w {
+            Some(w) => format!(
+                "{{\"used\":{:.2},\"cap\":{:.2},\"exceeded\":{},\"resetAt\":{}}}",
+                w.used,
+                w.cap,
+                w.exceeded,
+                w.reset_at.map(|r| format!("{r:.0}")).unwrap_or_else(|| "null".into()),
+            ),
+            None => "null".into(),
+        }
+    }
+    let cap = plan_monthly_cap(&s.sub.plan_id);
+    let cap_json = cap.map(|c| format!("{c:.2}")).unwrap_or_else(|| "null".into());
+    let err = match &s.err {
+        Some(e) => format!("\"{}\"", e.replace('\\', "\\\\").replace('"', "\\\"")),
+        None => "null".into(),
+    };
+    format!(
+        "{{\"plan\":\"{}\",\"status\":\"{}\",\"periodEnd\":{},\"monthlyCredits\":{:.2},\"monthlyCap\":{},\"purchasedCredits\":{:.2},\"freeCredits\":{:.2},\"fiveHour\":{},\"weekly\":{},\"summary\":{{\"requests\":{},\"cost\":{:.2},\"tokensIn\":{},\"tokensOut\":{},\"successRate\":{:.0}}},\"error\":{err}}}",
+        plan_name(&s.sub.plan_id),
+        s.sub.status,
+        s.sub.current_period_end
+            .as_ref()
+            .map(|e| format!("\"{}\"", &e[..10.min(e.len())]))
+            .unwrap_or_else(|| "null".into()),
+        s.credits.credits.monthly_credits,
+        cap_json,
+        s.credits.credits.purchased_credits,
+        s.credits.credits.free_credits,
+        win(&s.credits.window_limits.five_hour),
+        win(&s.credits.window_limits.weekly),
+        s.summary.total_count,
+        s.summary.total_cost,
+        s.summary.total_tokens_in,
+        s.summary.total_tokens_out,
+        s.summary.success_rate,
+    )
+}
+
 /// date/ISO helpers live in cmduse-core; re-export here (tests + render use it)
 pub use cmduse_core::parse_iso_utc;
 
@@ -130,8 +218,8 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
 
     o.push_str(&format!("\n{BOLD}Usage windows{RESET}\n"));
     // Monthly: cap from plan table, used = cap - remaining monthly credits.
-    // ponytail: reset_at parsed from ISO date has no UTC offset; treated as UTC — off by hours at most.
-    // upgrade: parse an explicit offset if the API ever emits one (all-Z today).
+    // reset_at is the subscription period end parsed by cmduse-core, which
+    // honors an explicit +HH:MM offset when present and reads UTC otherwise.
     if let Some(cap) = monthly_cap {
         let used = (cap - s.credits.credits.monthly_credits).clamp(0.0, cap);
         let reset_at = s.sub.current_period_end.as_ref().and_then(|e| parse_iso_utc(e));
