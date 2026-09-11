@@ -58,7 +58,7 @@ fn parse_offset(s: &str) -> Option<i64> {
 /// days since epoch → YYYY-MM-DD (UTC). Howard Hinnant civil_from_days.
 pub fn civil_from_days(days: i64) -> String {
     let z = days + 719_468;
-    let era = z / 146_097;
+    let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;
     let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
     let y = yoe + era * 400;

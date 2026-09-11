@@ -58,6 +58,23 @@ pub fn pct(used: f64, cap: f64) -> String {
     }
 }
 
+/// Compact "Xh Ym" / "Xd Yh" for a span of seconds. Pure duration — no
+/// absolute time involved; use this (not `rel_time`) for ETAs/countdowns.
+pub fn duration(secs: u64) -> String {
+    let d = secs / 86400;
+    let h = (secs % 86400) / 3600;
+    let m = (secs % 3600) / 60;
+    if d > 0 {
+        format!("{d}d {h}h")
+    } else if h > 0 {
+        format!("{h}h {m}m")
+    } else if m > 0 {
+        format!("{m}m")
+    } else {
+        "<1m".into()
+    }
+}
+
 /// Compact "Xh Ym" human time until `reset_at` (epoch ms). `now` may be None
 /// (zed ext without a clock) → falls back to a raw epoch stamp.
 pub fn rel_time(reset_at: Option<f64>, now: Option<u64>) -> String {
@@ -73,19 +90,7 @@ pub fn rel_time(reset_at: Option<f64>, now: Option<u64>) -> String {
         // next fetch will pick up the fresh window
         return "resetting…".into();
     }
-    let diff = reset_s - now_s;
-    let d = diff / 86400;
-    let h = (diff % 86400) / 3600;
-    let m = (diff % 3600) / 60;
-    if d > 0 {
-        format!("{d}d {h}h")
-    } else if h > 0 {
-        format!("{h}h {m}m")
-    } else if m > 0 {
-        format!("{m}m")
-    } else {
-        "<1m".into()
-    }
+    duration(reset_s - now_s)
 }
 
 /// Elapsed % of a rolling window: window length = dur_secs, ends at reset_at.
@@ -369,6 +374,32 @@ mod tests {
                 c["in"]
             );
         }
+        for c in v["elapsedPct"].as_array().unwrap() {
+            let reset = if c["resetAtMs"].is_null() {
+                None
+            } else {
+                Some(c["resetAtMs"].as_f64().unwrap())
+            };
+            let got = elapsed_pct(reset, c["durSecs"].as_u64().unwrap(), Some(c["now"].as_u64().unwrap()));
+            let want = if c["out"].is_null() { None } else { Some(c["out"].as_u64().unwrap() as u8) };
+            assert_eq!(got, want, "elapsedPct {}", c["durSecs"]);
+        }
+        for c in v["paceEta"].as_array().unwrap() {
+            let reset = if c["resetAtMs"].is_null() {
+                None
+            } else {
+                Some(c["resetAtMs"].as_f64().unwrap())
+            };
+            let got = pace_eta(
+                reset,
+                c["durSecs"].as_u64().unwrap(),
+                c["used"].as_f64().unwrap(),
+                c["cap"].as_f64().unwrap(),
+                c["now"].as_u64().unwrap(),
+            );
+            let want = c["outSecs"].as_f64();
+            assert_eq!(got, want, "paceEta used={} cap={}", c["used"], c["cap"]);
+        }
         for c in v["relTime"].as_array().unwrap() {
             let reset = if c["resetAtMs"].is_null() {
                 None
@@ -381,6 +412,9 @@ mod tests {
             let got = parse_iso_utc(c["in"].as_str().unwrap());
             let want = if c["outMs"].is_null() { None } else { Some(c["outMs"].as_f64().unwrap()) };
             assert_eq!(got, want, "parse {}", c["in"]);
+        }
+        for c in v["duration"].as_array().unwrap() {
+            assert_eq!(duration(c["in"].as_u64().unwrap()), c["out"].as_str().unwrap());
         }
         for c in v["plan"].as_array().unwrap() {
             let id = c["id"].as_str().unwrap();

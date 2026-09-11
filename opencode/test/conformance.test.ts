@@ -4,7 +4,10 @@ import { canonicalizeModelId, evaluateModelAccess } from "../src/access";
 import { bareModel } from "../src/gating";
 import {
 	compact,
+	duration,
+	elapsedPct,
 	money,
+	paceEta,
 	parseIsoUtc,
 	pctStr,
 	planMonthlyCap,
@@ -20,6 +23,15 @@ type CompactCase = { in: number; out: string };
 type PctCase = { used: number; cap: number; out: string };
 type BareCase = { in: string; out: string };
 type CanonCase = { in: string; out: string };
+type ElapsedCase = { resetAtMs: number | null; durSecs: number; now: number; out: number | null };
+type PaceCase = {
+	resetAtMs: number | null;
+	durSecs: number;
+	used: number;
+	cap: number;
+	now: number;
+	outSecs: number | null;
+};
 type RelCase = { resetAtMs: number | null; now: number; out: string };
 type IsoCase = { in: string; outMs: number | null };
 type PlanCase = { id: string; name: string; cap: number | null };
@@ -50,12 +62,30 @@ describe("conformance vectors (shared with cmduse-core)", () => {
 			expect([c.in, canonicalizeModelId(c.in)]).toEqual([c.in, c.out]);
 		}
 	});
+	test("elapsedPct", () => {
+		for (const c of conformance.elapsedPct as ElapsedCase[]) {
+			const got = elapsedPct(c.resetAtMs ?? undefined, c.durSecs, c.now) ?? null;
+			expect([c.durSecs, c.now, got]).toEqual([c.durSecs, c.now, c.out]);
+		}
+	});
+	test("paceEta", () => {
+		for (const c of conformance.paceEta as PaceCase[]) {
+			const got =
+				paceEta(c.resetAtMs ?? undefined, c.durSecs, c.used, c.cap, c.now) ?? null;
+			expect([c.used, c.cap, got]).toEqual([c.used, c.cap, c.outSecs]);
+		}
+	});
 	test("relTime", () => {
 		for (const c of conformance.relTime as RelCase[]) {
 			expect([c.resetAtMs, relTime(c.resetAtMs ?? undefined, c.now)]).toEqual([
 				c.resetAtMs,
 				c.out,
 			]);
+		}
+	});
+	test("duration", () => {
+		for (const c of conformance.duration as CompactCase[]) {
+			expect([c.in, duration(c.in)]).toEqual([c.in, c.out]);
 		}
 	});
 	test("parseIso", () => {

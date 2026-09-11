@@ -9,6 +9,10 @@ import plansData from "../../core/plans.json";
 
 const BAR_WIDTH = 12;
 
+// Rolling-window lengths (seconds); mirrors cmduse_core::FIVE_HOUR_SECS/WEEKLY_SECS.
+export const FIVE_HOUR_SECS = 5 * 3600;
+export const WEEKLY_SECS = 7 * 86400;
+
 export function money(v: number): string {
 	return `$${v.toFixed(2)}`;
 }
@@ -41,6 +45,58 @@ export function relTime(resetAtMs: number | undefined, nowSecs: number): string 
 	if (h > 0) return `${h}h ${m}m`;
 	if (m > 0) return `${m}m`;
 	return "<1m";
+}
+
+/** Compact "Xh Ym" / "Xd Yh" for a span of seconds. Pure duration — use this
+ * (not relTime) for ETAs/countdowns. Mirrors cmduse_core::duration. */
+export function duration(secs: number): string {
+	const d = Math.floor(secs / 86400);
+	const h = Math.floor((secs % 86400) / 3600);
+	const m = Math.floor((secs % 3600) / 60);
+	if (d > 0) return `${d}d ${h}h`;
+	if (h > 0) return `${h}h ${m}m`;
+	if (m > 0) return `${m}m`;
+	return "<1m";
+}
+
+/** % of a rolling window elapsed; window length = durSecs, ends at resetAtMs.
+ * undefined when the window hasn't started or the reset is unknown. */
+export function elapsedPct(
+	resetAtMs: number | undefined,
+	durSecs: number,
+	nowSecs: number,
+): number | undefined {
+	if (resetAtMs === undefined) return undefined;
+	const resetSecs = Math.floor(resetAtMs / 1000);
+	if (resetSecs < durSecs) return undefined; // window start would precede epoch
+	const start = resetSecs - durSecs;
+	if (nowSecs < start) return undefined;
+	const pct = Math.min(Math.max(((nowSecs - start) / durSecs) * 100, 0), 100);
+	return Math.round(pct);
+}
+
+/** Seconds until spend hits cap at the current rate, if before the reset.
+ * Suppressed before 10% of the window has elapsed (flat-rate projection is
+ * unreliable that early). undefined = no warning. */
+export function paceEta(
+	resetAtMs: number | undefined,
+	durSecs: number,
+	used: number,
+	cap: number,
+	nowSecs: number,
+): number | undefined {
+	if (resetAtMs === undefined) return undefined;
+	const resetSecs = Math.floor(resetAtMs / 1000);
+	if (resetSecs < durSecs) return undefined; // window start would precede epoch
+	const start = resetSecs - durSecs;
+	if (nowSecs <= start || nowSecs >= resetSecs) return undefined;
+	const elapsed = nowSecs - start;
+	if (elapsed / durSecs < 0.1) return undefined;
+	const rate = used / elapsed;
+	if (rate <= 0 || used >= cap) return undefined;
+	const secsToCap = (cap - used) / rate;
+	if (secsToCap >= resetSecs - nowSecs) return undefined;
+	return secsToCap;
 }
 
 /** ISO 8601 → epoch ms. Handles trailing Z or a ±HH:MM / ±HHMM offset. */
@@ -93,9 +149,18 @@ export function planName(planId: string): string {
 	return DEFAULT_NAME;
 }
 
-export function windowLine(label: string, w: Window, nowSecs: number): string {
+export function windowLine(
+	label: string,
+	w: Window,
+	nowSecs: number,
+	durSecs?: number,
+): string {
 	const status = w.exceeded ? " · **LIMIT EXCEEDED**" : "";
-	return `**${label}** \`${bar(w.used, w.cap)}\` ${money(w.used)} of ${money(w.cap)} (${pctStr(w.used, w.cap)}) · resets in ${relTime(w.resetAt, nowSecs)}${status}\n`;
+	const elapsed = durSecs !== undefined ? elapsedPct(w.resetAt, durSecs, nowSecs) : undefined;
+	const thru = elapsed !== undefined ? ` · window ${elapsed}% elapsed` : "";
+	const eta = durSecs !== undefined ? paceEta(w.resetAt, durSecs, w.used, w.cap, nowSecs) : undefined;
+	const pace = eta !== undefined ? ` · **on pace to hit cap in ${duration(eta)}**` : "";
+	return `**${label}** \`${bar(w.used, w.cap)}\` ${money(w.used)} of ${money(w.cap)} (${pctStr(w.used, w.cap)}) · resets in ${relTime(w.resetAt, nowSecs)}${thru}${pace}${status}\n`;
 }
 
 export function plansTable(current: string): string {
@@ -141,12 +206,17 @@ export async function renderUsage(key: string): Promise<string> {
 	if (cap) {
 		const used = Math.min(Math.max(cap - cr.credits.monthlyCredits, 0), cap);
 		const resetAt = sub.currentPeriodEnd ? parseIsoUtc(sub.currentPeriodEnd) : undefined;
-		lines.push(windowLine("Monthly", { used, cap, resetAt }, nowSecs));
+		const start = sub.currentPeriodStart ? parseIsoUtc(sub.currentPeriodStart) : undefined;
+		const dur =
+			start !== undefined && resetAt !== undefined
+				? Math.max(Math.floor((resetAt - start) / 1000), 1)
+				: undefined;
+		lines.push(windowLine("Monthly", { used, cap, resetAt }, nowSecs, dur));
 	}
 	const five = cr.windowLimits?.fiveHour;
 	const weekly = cr.windowLimits?.weekly;
-	if (five) lines.push(windowLine("5-hour", five, nowSecs));
-	if (weekly) lines.push(windowLine("Weekly", weekly, nowSecs));
+	if (five) lines.push(windowLine("5-hour", five, nowSecs, FIVE_HOUR_SECS));
+	if (weekly) lines.push(windowLine("Weekly", weekly, nowSecs, WEEKLY_SECS));
 	if (!five && !weekly)
 		lines.push("No rolling windows on this plan (pay-as-you-go credits only).\n");
 

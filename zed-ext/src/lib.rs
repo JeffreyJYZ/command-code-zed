@@ -77,7 +77,7 @@ fn window_line(label: &str, w: &Window, now: Option<u64>, dur_secs: Option<u64>)
         .zip(now)
         .and_then(|(d, now_s)| {
             cmduse_core::pace_eta(w.reset_at, d, w.used, w.cap, now_s)
-                .map(|secs| rel_time(Some(secs * 1000.0), Some(now_s)))
+                .map(|secs| cmduse_core::duration(secs as u64))
         })
         .map(|eta| format!(" · **on pace to hit cap in {eta}**"))
         .unwrap_or_default();
@@ -262,7 +262,10 @@ mod tests {
         let early = window_line("5-hour", &mk(now - d / 20), Some(now), Some(d));
         assert!(!early.contains("on pace"), "must not warn at 5% elapsed: {early}");
         let at10 = window_line("5-hour", &mk(now - d / 10), Some(now), Some(d));
-        assert!(at10.contains("on pace"), "should warn at 10% elapsed: {at10}");
+        assert!(
+            at10.contains("on pace to hit cap in 30m"),
+            "ETA must render the duration, not an absolute reset: {at10}"
+        );
     }
 
     #[test]

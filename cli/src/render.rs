@@ -147,7 +147,7 @@ pub fn window_line(
     let pace = dur_secs
         .and_then(|d| {
             cmduse_core::pace_eta(w.reset_at, d, w.used, w.cap, now)
-                .map(|secs| rel_time(Some(secs * 1000.0), now))
+                .map(|secs| cmduse_core::duration(secs as u64))
         })
         .map(|eta| format!(" · {YELLOW}on pace to hit cap in {eta}{RESET}"))
         .unwrap_or_default();

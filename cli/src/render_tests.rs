@@ -79,7 +79,10 @@ fn pace_warns_only_after_10pct_elapsed() {
         reset_at: Some((start10 + d) as f64 * 1000.0),
     };
     let line = window_line("5-hour", &w_at, now, 20, Some(d));
-    assert!(line.contains("on pace"), "should warn at 10% elapsed: {line}");
+    assert!(
+        line.contains("on pace to hit cap in 30m"),
+        "ETA must render the duration, not an absolute reset: {line}"
+    );
 }
 
 #[test]

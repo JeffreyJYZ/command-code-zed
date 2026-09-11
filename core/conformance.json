@@ -32,6 +32,18 @@
 		{ "in": "claude-opus-4-7-20251101", "out": "claude-opus-4-7" },
 		{ "in": "totally-new-model", "out": "totally-new-model" }
 	],
+	"elapsedPct": [
+		{ "resetAtMs": 1009000000, "durSecs": 18000, "now": 1000000, "out": 50 },
+		{ "resetAtMs": 1000, "durSecs": 3600, "now": 1000000, "out": null },
+		{ "resetAtMs": null, "durSecs": 3600, "now": 1000000, "out": null }
+	],
+	"paceEta": [
+		{ "resetAtMs": 1017100000, "durSecs": 18000, "used": 5, "cap": 10, "now": 1000000, "outSecs": null },
+		{ "resetAtMs": 1016200000, "durSecs": 18000, "used": 5, "cap": 10, "now": 1000000, "outSecs": 1800 },
+		{ "resetAtMs": 1009000000, "durSecs": 18000, "used": 1, "cap": 10, "now": 1000000, "outSecs": null },
+		{ "resetAtMs": 1009000000, "durSecs": 18000, "used": 12, "cap": 10, "now": 1000000, "outSecs": null },
+		{ "resetAtMs": null, "durSecs": 18000, "used": 5, "cap": 10, "now": 1000000, "outSecs": null }
+	],
 	"relTime": [
 		{ "resetAtMs": 120000, "now": 60, "out": "1m" },
 		{ "resetAtMs": 7200000, "now": 0, "out": "2h 0m" },
@@ -39,6 +51,12 @@
 		{ "resetAtMs": 59000, "now": 0, "out": "<1m" },
 		{ "resetAtMs": 1000, "now": 100, "out": "resetting…" },
 		{ "resetAtMs": null, "now": 0, "out": "unknown" }
+	],
+	"duration": [
+		{ "in": 59, "out": "<1m" },
+		{ "in": 60, "out": "1m" },
+		{ "in": 7200, "out": "2h 0m" },
+		{ "in": 136800, "out": "1d 14h" }
 	],
 	"parseIso": [
 		{ "in": "2026-09-27T12:23:00.000Z", "outMs": 1790511780000 },

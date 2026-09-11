@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { canonicalizeModelId, evaluateModelAccess } from "../src/access";
 import { MODEL_CATEGORIES, PLAN_RULES } from "../src/gating";
 import { isClaude, splitModels } from "../src/models";
-import { bar, pctStr, plansTable, windowLine } from "../src/usage";
+import { bar, FIVE_HOUR_SECS, pctStr, plansTable, windowLine } from "../src/usage";
 
 // money/compact/relTime/parseIsoUtc/planName/planMonthlyCap and the core gating
 // behavior are pinned by conformance.test.ts (shared vectors). This file covers
@@ -106,6 +106,18 @@ describe("usage render", () => {
 			60,
 		);
 		expect(exceeded).toContain("LIMIT EXCEEDED");
+	});
+	test("windowLine adds elapsed% and pace when duration is known", () => {
+		const now = 1_000_000;
+		// 10% elapsed, spend rate on track to hit cap before reset
+		const pace = windowLine(
+			"5-hour",
+			{ used: 5, cap: 10, resetAt: 1_016_200_000 },
+			now,
+			FIVE_HOUR_SECS,
+		);
+		expect(pace).toContain("window 10% elapsed");
+		expect(pace).toContain("on pace to hit cap in 30m");
 	});
 	test("plansTable marks current", () => {
 		const t = plansTable("individual-goat");
