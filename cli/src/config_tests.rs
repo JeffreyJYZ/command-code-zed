@@ -1,4 +1,9 @@
 use super::config::{set, Config};
+use crate::cli::ConfigSet;
+
+fn cs(interval: Option<u64>, width: Option<usize>) -> ConfigSet {
+    ConfigSet { interval, width, ..Default::default() }
+}
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let d = std::env::temp_dir().join(format!("cmduse-test-{name}-{}", std::process::id()));
@@ -50,34 +55,32 @@ fn config_set_validates_and_persists() {
     std::env::set_var("XDG_CONFIG_HOME", &dir);
 
     // valid set
-    set(Some(15), Some(30), None, None, None, Some(true), Some(50), None).unwrap();
+    set(&cs(Some(15), Some(30))).unwrap();
     let c: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(c.interval_secs, 15);
     assert_eq!(c.bar_width, 30);
     assert!(c.burst_enabled);
-    assert_eq!(c.burst_samples, 50);
 
     // partial set keeps other key
-    set(Some(60), None, None, None, None, None, None, None).unwrap();
+    set(&cs(Some(60), None)).unwrap();
     let c: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(c.interval_secs, 60);
     assert_eq!(c.bar_width, 30);
 
     // burst toggle off keeps samples; notify toggle off persists
-    set(None, None, None, None, None, Some(false), None, Some(false)).unwrap();
+    set(&ConfigSet { burst_on: Some(false), notify: Some(false), ..Default::default() }).unwrap();
     let c: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     assert!(!c.burst_enabled);
-    assert_eq!(c.burst_samples, 50);
     assert!(!c.notify_on_cap);
 
     // validation errors
-    assert!(set(Some(0), None, None, None, None, None, None, None).is_err());
-    assert!(set(Some(86_401), None, None, None, None, None, None, None).is_err());
-    assert!(set(None, Some(4), None, None, None, None, None, None).is_err()); // < 5
-    assert!(set(None, Some(201), None, None, None, None, None, None).is_err()); // > 200
-    assert!(set(None, None, None, None, None, None, Some(3), None).is_err()); // < 5
-    assert!(set(None, None, None, None, None, None, Some(241), None).is_err()); // > 240
-    assert!(set(None, None, None, None, None, None, None, None).is_err()); // nothing to set
+    assert!(set(&cs(Some(0), None)).is_err());
+    assert!(set(&cs(Some(86_401), None)).is_err());
+    assert!(set(&cs(None, Some(4))).is_err()); // < 5
+    assert!(set(&cs(None, Some(201))).is_err()); // > 200
+    assert!(set(&ConfigSet { bursts: Some(3), ..Default::default() }).is_err()); // < 5
+    assert!(set(&ConfigSet { bursts: Some(241), ..Default::default() }).is_err()); // > 240
+    assert!(set(&ConfigSet::default()).is_err()); // nothing to set
 
     // file unchanged after failed set
     let c: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();

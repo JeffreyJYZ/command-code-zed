@@ -33,12 +33,8 @@ pub fn config_path() -> PathBuf {
     std::env::var("XDG_CONFIG_HOME")
         .map(|d| PathBuf::from(d).join("cmd-usage/config.json"))
         .unwrap_or_else(|_| {
-            dirs_home().join(".config/cmd-usage/config.json")
+            crate::paths::home().join(".config/cmd-usage/config.json")
         })
-}
-
-fn dirs_home() -> PathBuf {
-    std::env::var("HOME").unwrap_or_else(|_| "/".into()).into()
 }
 
 pub fn load() -> Config {
@@ -53,39 +49,33 @@ pub fn load() -> Config {
 }
 
 /// Persist any subset of settings; missing keys keep current values.
-#[allow(clippy::too_many_arguments)]
-pub fn set(
-    interval_secs: Option<u64>,
-    bar_width: Option<usize>,
-    sl_template: Option<String>,
-    sl_colors: Option<bool>,
-    sl_ascii: Option<bool>,
-    burst_enabled: Option<bool>,
-    burst_samples: Option<usize>,
-    notify_on_cap: Option<bool>,
-) -> Result<(), String> {
-    if interval_secs.is_none()
-        && bar_width.is_none()
-        && sl_template.is_none()
-        && sl_colors.is_none()
-        && sl_ascii.is_none()
-        && burst_enabled.is_none()
-        && burst_samples.is_none()
-        && notify_on_cap.is_none()
+pub fn set(cs: &crate::cli::ConfigSet) -> Result<(), String> {
+    if [
+        cs.interval.is_some(),
+        cs.width.is_some(),
+        cs.sl_template.is_some(),
+        cs.sl_colors.is_some(),
+        cs.sl_ascii.is_some(),
+        cs.burst_on.is_some(),
+        cs.bursts.is_some(),
+        cs.notify.is_some(),
+    ]
+    .iter()
+    .all(|set| !set)
     {
         return Err("nothing to set".into());
     }
-    if let Some(v) = interval_secs {
+    if let Some(v) = cs.interval {
         if v == 0 || v > 86_400 {
             return Err("interval must be 1–86400 seconds".into());
         }
     }
-    if let Some(v) = bar_width {
+    if let Some(v) = cs.width {
         if !(5..=200).contains(&v) {
             return Err("bar width must be 5–200".into());
         }
     }
-    if let Some(v) = burst_samples {
+    if let Some(v) = cs.bursts {
         if !(5..=240).contains(&v) {
             return Err("burst samples must be 5–240".into());
         }
@@ -93,14 +83,14 @@ pub fn set(
 
     let cur = load();
     let cfg = Config {
-        interval_secs: interval_secs.unwrap_or(cur.interval_secs),
-        bar_width: bar_width.unwrap_or(cur.bar_width),
-        burst_enabled: burst_enabled.unwrap_or(cur.burst_enabled),
-        burst_samples: burst_samples.unwrap_or(cur.burst_samples),
-        notify_on_cap: notify_on_cap.unwrap_or(cur.notify_on_cap),
-        statusline_template: sl_template.unwrap_or_else(|| cur.statusline_template.clone()),
-        statusline_colors: sl_colors.unwrap_or(cur.statusline_colors),
-        statusline_ascii: sl_ascii.unwrap_or(cur.statusline_ascii),
+        interval_secs: cs.interval.unwrap_or(cur.interval_secs),
+        bar_width: cs.width.unwrap_or(cur.bar_width),
+        burst_enabled: cs.burst_on.unwrap_or(cur.burst_enabled),
+        burst_samples: cs.bursts.unwrap_or(cur.burst_samples),
+        notify_on_cap: cs.notify.unwrap_or(cur.notify_on_cap),
+        statusline_template: cs.sl_template.clone().unwrap_or(cur.statusline_template),
+        statusline_colors: cs.sl_colors.unwrap_or(cur.statusline_colors),
+        statusline_ascii: cs.sl_ascii.unwrap_or(cur.statusline_ascii),
     };
     let json = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
 

@@ -134,5 +134,4 @@ Logged-in [Command Code CLI](https://commandcode.ai) — reads your API key from
 
 - Window bars: green <70%, yellow 70–90%, red ≥90%, plus `LIMIT EXCEEDED` flag.
 - Spend-burst sparkline appears in watch mode after 2 refreshes (bars = $ spent between refreshes, ~3 min of history at 5s interval, capped at 40 samples; tall = burst, flat = idle).
-- `cmduse` checks crates.io once per 24h and warns on stderr if a newer version exists. Delete `~/.cache/cmd-usage/last-check` to force a check.
 - On Monthly caps: monthly pool is the plan total (e.g. $70 on GOAT). Docs describe per-model allowances, but the CLI and API meter one shared pool — verified empirically.

@@ -1,52 +1,41 @@
 pub mod dates;
+pub mod wire;
 pub use dates::parse_iso_utc;
+pub use wire::{
+    Credits, CreditsResp, SubData, SubscriptionsResp, UsageSummary, Window, WindowLimits,
+};
+
+// Plan table, name rules, and monthly caps generated from plans.json
+// (single source shared with the TypeScript opencode plugin).
+include!(concat!(env!("OUT_DIR"), "/plans.rs"));
 
 /// Plan display name from the API's planId (e.g. "individual-goat" → "GOAT").
+/// First rule whose needles are all contained in the lowercased id wins.
 pub fn plan_name(plan_id: &str) -> &'static str {
     let id = plan_id.to_lowercase();
-    if id.contains("enterprise") {
-        "Enterprise"
-    } else if id.contains("provider") {
-        "Provider"
-    } else if id.contains("team") {
-        "Team Pro"
-    } else if id.contains("max") {
-        if id.contains("20") { "Max 20x" } else { "Max 10x" }
-    } else if id.contains("goat") {
-        "GOAT"
-    } else if id.contains("pro") {
-        "Pro"
-    } else if id.contains("go") {
-        "Go"
-    } else {
-        "Free"
+    for (needles, name) in NAME_RULES {
+        if needles.iter().all(|n| id.contains(n)) {
+            return name;
+        }
     }
+    DEFAULT_NAME
 }
 
 /// Monthly credit pool per plan. One shared pool per plan (verified — the
 /// docs' per-model allowances are not what the API meters). None = PAYG.
 pub fn plan_monthly_cap(plan_id: &str) -> Option<f64> {
-    let id = plan_id.to_lowercase();
-    if id.contains("enterprise") || id.contains("provider") {
-        None
-    } else if id.contains("team") {
-        Some(40.0)
-    } else if id.contains("max") {
-        if id.contains("20") { Some(300.0) } else { Some(150.0) }
-    } else if id.contains("goat") {
-        Some(70.0)
-    } else if id.contains("pro") {
-        Some(80.0)
-    } else if id.contains("go") {
-        Some(10.0)
-    } else {
-        None
-    }
+    let name = plan_name(plan_id);
+    CAPS.iter().find(|(n, _)| *n == name).and_then(|(_, c)| *c)
 }
 
 pub fn money(v: f64) -> String {
     format!("${v:.2}")
 }
+
+/// Rolling-window lengths — the API serves only `resetAt`, the length is
+/// implied by the window name.
+pub const FIVE_HOUR_SECS: u64 = 5 * 3600;
+pub const WEEKLY_SECS: u64 = 7 * 86400;
 
 pub fn compact(n: u64) -> String {
     if n >= 1_000_000 {
@@ -132,7 +121,7 @@ pub fn pace_eta(
         return None; // too early in window: flat-rate ETA unreliable
     }
     let rate = used / elapsed; // $/sec
-    if rate <= 0.0 {
+    if rate <= 0.0 || used >= cap {
         return None;
     }
     let secs_to_cap = (cap - used) / rate;
@@ -140,6 +129,96 @@ pub fn pace_eta(
         return None; // won't hit cap before reset
     }
     Some(secs_to_cap)
+}
+
+// ---- plan-based model gating (tables from gating.json) ----
+// Mirrors the opencode plugin's evaluateModelAccess; conformance vectors pin
+// the two ports together. Unknown plan/model default to allowed — the API
+// enforces the real gate.
+
+fn strip_date(s: &str) -> String {
+    let b = s.as_bytes();
+    if b.len() > 9 {
+        let sep = b[b.len() - 9];
+        if (sep == b'-' || sep == b'@') && b[b.len() - 8..].iter().all(u8::is_ascii_digit) {
+            return s[..s.len() - 9].to_string();
+        }
+    }
+    s.to_string()
+}
+
+/// Exact known id (case-insensitive), else alias target, else date-stripped.
+fn canonical_model(model: &str) -> String {
+    let lower = model.to_lowercase();
+    if let Some(k) = GATE_KNOWN.iter().find(|m| m.to_lowercase() == lower) {
+        return (*k).to_string();
+    }
+    if let Some((_, to)) = GATE_ALIASES.iter().find(|(from, _)| *from == lower) {
+        return GATE_KNOWN
+            .iter()
+            .find(|m| m.to_lowercase() == to.to_lowercase())
+            .map(|m| (*m).to_string())
+            .unwrap_or_else(|| model.to_string());
+    }
+    let stripped = strip_date(model).to_lowercase();
+    GATE_KNOWN
+        .iter()
+        .find(|m| m.to_lowercase() == stripped)
+        .map(|m| (*m).to_string())
+        .unwrap_or_else(|| model.to_string())
+}
+
+/// Table category, else the longest known id that prefixes it (a version bump
+/// of a known model inherits its category; otherwise None).
+fn model_category(model: &str) -> Option<&'static str> {
+    let lower = canonical_model(model).to_lowercase();
+    if let Some((_, c)) = GATE_CATEGORIES.iter().find(|(m, _)| m.to_lowercase() == lower) {
+        return Some(c);
+    }
+    let mut best: Option<(&str, &str)> = None;
+    for (m, c) in GATE_CATEGORIES {
+        if lower.starts_with(&m.to_lowercase()) && best.is_none_or(|(bm, _)| m.len() > bm.len()) {
+            best = Some((m, c));
+        }
+    }
+    best.map(|(_, c)| c)
+}
+
+pub fn gate_allowed(model: &str, plan_id: &str, unlocked: bool) -> bool {
+    gate(model, plan_id, unlocked).0
+}
+
+/// Access decision plus a short human reason (for `models --gated --json`).
+pub fn gate(model: &str, plan_id: &str, unlocked: bool) -> (bool, &'static str) {
+    if unlocked {
+        return (true, "credits unlock all models");
+    }
+    if plan_id.is_empty() {
+        return (true, "unknown plan");
+    }
+    let canonical = canonical_model(model);
+    let cl = canonical.to_lowercase();
+    if let Some((_, list)) = GATE_HARD_BLOCKED.iter().find(|(p, _)| *p == plan_id) {
+        if list.iter().any(|m| m.to_lowercase() == cl) {
+            return (false, "blocked for this plan");
+        }
+    }
+    let Some((_, allowed, blocked)) = GATE_PLANS.iter().find(|(p, _, _)| *p == plan_id) else {
+        return (true, "plan has no restrictions");
+    };
+    let Some(cat) = model_category(model) else {
+        return (true, "unknown model category");
+    };
+    if blocked
+        .iter()
+        .any(|b| b.rsplit(':').next().unwrap_or(b).to_lowercase() == cl)
+    {
+        return (false, "blocked for this plan");
+    }
+    if !allowed.contains(&cat) {
+        return (false, "premium model, plan is open-models-only");
+    }
+    (true, "allowed")
 }
 
 #[cfg(test)]
@@ -238,5 +317,50 @@ mod tests {
         let start50 = now - d / 2;
         let fine = pace_eta(Some((start50 + d) as f64 * 1000.0), d, 1.0, 10.0, now);
         assert!(fine.is_none());
+        // already over cap → no negative ETA, no warning next to LIMIT EXCEEDED.
+        let over = pace_eta(Some((start50 + d) as f64 * 1000.0), d, 12.0, 10.0, now);
+        assert!(over.is_none(), "over-cap window must not project: {over:?}");
+    }
+
+    /// Shared vectors (conformance.json) that the opencode TypeScript port must
+    /// also satisfy — keeps the two implementations from drifting.
+    #[test]
+    fn conformance_vectors() {
+        let v: serde_json::Value =
+            serde_json::from_str(include_str!("../conformance.json")).unwrap();
+        for c in v["money"].as_array().unwrap() {
+            assert_eq!(money(c["in"].as_f64().unwrap()), c["out"].as_str().unwrap());
+        }
+        for c in v["compact"].as_array().unwrap() {
+            assert_eq!(compact(c["in"].as_u64().unwrap()), c["out"].as_str().unwrap());
+        }
+        for c in v["relTime"].as_array().unwrap() {
+            let reset = if c["resetAtMs"].is_null() {
+                None
+            } else {
+                Some(c["resetAtMs"].as_f64().unwrap())
+            };
+            assert_eq!(rel_time(reset, Some(c["now"].as_u64().unwrap())), c["out"].as_str().unwrap());
+        }
+        for c in v["parseIso"].as_array().unwrap() {
+            let got = parse_iso_utc(c["in"].as_str().unwrap());
+            let want = if c["outMs"].is_null() { None } else { Some(c["outMs"].as_f64().unwrap()) };
+            assert_eq!(got, want, "parse {}", c["in"]);
+        }
+        for c in v["plan"].as_array().unwrap() {
+            let id = c["id"].as_str().unwrap();
+            assert_eq!(plan_name(id), c["name"].as_str().unwrap(), "name {id}");
+            assert_eq!(plan_monthly_cap(id), c["cap"].as_f64(), "cap {id}");
+        }
+        for c in v["gating"].as_array().unwrap() {
+            let model = c["model"].as_str().unwrap();
+            let plan = c["plan"].as_str().unwrap();
+            let unlocked = c["unlocked"].as_bool().unwrap();
+            assert_eq!(
+                gate_allowed(model, plan, unlocked),
+                c["allowed"].as_bool().unwrap(),
+                "gate {model} / {plan} / unlocked={unlocked}"
+            );
+        }
     }
 }

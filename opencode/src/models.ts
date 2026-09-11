@@ -1,5 +1,5 @@
-import { filterByPlan, type PlanLike } from "./access";
-import { credits, getPlanInfo, providerModels } from "./api";
+import { evaluateModelAccess, type PlanLike } from "./access";
+import { credits, providerModels, subscriptions } from "./api";
 
 export type CmdModel = { id: string; name: string; contextLength: number };
 
@@ -55,8 +55,7 @@ export async function loadModels(key: string): Promise<ModelSplit> {
 
 	let plan: PlanLike = { planId: "", purchasedCredits: 0, freeCredits: 0 };
 	try {
-		const sub = await getPlanInfo(key);
-		const cr = await credits(key);
+		const [sub, cr] = await Promise.all([subscriptions(key), credits(key)]);
 		plan = {
 			planId: sub.planId,
 			purchasedCredits: cr.credits.purchasedCredits ?? 0,
@@ -65,7 +64,7 @@ export async function loadModels(key: string): Promise<ModelSplit> {
 	} catch {
 		// gating needs billing API; if unreachable, show everything (API enforces real limits)
 	}
-	const allowed = filterByPlan(models, plan);
+	const allowed = models.filter((m) => evaluateModelAccess(m.id, plan).allowed);
 	const { claude, open } = splitModels(allowed);
 	return { claude, open };
 }

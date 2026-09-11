@@ -1,43 +1,9 @@
 use super::render::*;
 use crate::render::{Snapshot};
 
-#[test]
-fn plan_names_all_plans() {
-    assert_eq!(plan_name("individual-goat"), "GOAT");
-    assert_eq!(plan_name("individual-go"), "Go");
-    assert_eq!(plan_name("individual-pro"), "Pro");
-    assert_eq!(plan_name("individual-pro-v1"), "Pro");
-    assert_eq!(plan_name("individual-max"), "Max 10x");
-    assert_eq!(plan_name("individual-max-20"), "Max 20x");
-    assert_eq!(plan_name("individual-max-10x"), "Max 10x");
-    assert_eq!(plan_name("teams-pro"), "Team Pro");
-    assert_eq!(plan_name("individual-provider"), "Provider");
-    assert_eq!(plan_name("enterprise-custom"), "Enterprise");
-    assert_eq!(plan_name("whatever-unknown"), "Free");
-    assert_eq!(plan_name(""), "Free");
-}
-
-#[test]
-fn monthly_caps_match_docs() {
-    // from commandcode.ai pricing-limits
-    assert_eq!(plan_monthly_cap("individual-goat"), Some(70.0));
-    assert_eq!(plan_monthly_cap("individual-go"), Some(10.0));
-    assert_eq!(plan_monthly_cap("individual-pro"), Some(80.0));
-    assert_eq!(plan_monthly_cap("individual-max-20"), Some(300.0));
-    assert_eq!(plan_monthly_cap("individual-max-10x"), Some(150.0));
-    assert_eq!(plan_monthly_cap("teams-pro"), Some(40.0));
-    // no fixed pool
-    assert_eq!(plan_monthly_cap("individual-provider"), None);
-    assert_eq!(plan_monthly_cap("enterprise-x"), None);
-    assert_eq!(plan_monthly_cap("free"), None);
-}
-
-#[test]
-fn max_plan_id_ordering_matters() {
-    // "max-20" contains "max"; ensure 20 check wins
-    assert_eq!(plan_monthly_cap("individual-max-20x"), Some(300.0));
-    assert_eq!(plan_monthly_cap("max-20-special"), Some(300.0));
-}
+// Plan-name/cap, money, compact, rel_time, and ISO cases are covered by the
+// shared conformance vectors in core (conformance.json) — only presentation
+// (bars, window lines, tables, templates) is asserted here.
 
 #[test]
 fn bar_boundaries() {
@@ -61,82 +27,6 @@ fn bar_boundaries() {
     assert_eq!(empty(5.0, 10.0, 5), 2);
     assert!(bar(7.5, 10.0, 20).contains("75.0%"));
     assert!(bar(95.0, 10.0, 20).contains("100.0%")); // clamps at cap
-}
-
-#[test]
-fn money_formatting() {
-    assert_eq!(money(0.0), "$0.00");
-    assert_eq!(money(9.25), "$9.25");
-    assert_eq!(money(70.0), "$70.00");
-    assert_eq!(money(0.005), "$0.01"); // rounds
-}
-
-#[test]
-fn compact_formatting() {
-    assert_eq!(compact(0), "0");
-    assert_eq!(compact(999), "999");
-    assert_eq!(compact(1000), "1.0K");
-    assert_eq!(compact(28_129_791), "28.1M");
-    assert_eq!(compact(64_096_255), "64.1M");
-}
-
-#[test]
-fn rel_time_windows() {
-    let now = 1_000_000u64;
-    // 2 minutes (reset_at in ms)
-    assert_eq!(rel_time(Some((now as f64 + 120.0) * 1000.0), now), "2m");
-    // 1h 5m
-    assert_eq!(rel_time(Some((now as f64 + 3900.0) * 1000.0), now), "1h 5m");
-    // 2d 3h
-    assert_eq!(rel_time(Some((now as f64 + 2.0 * 86400.0 + 3.0 * 3600.0) * 1000.0), now), "2d 3h");
-    // already passed (clock skew / rolling over)
-    assert_eq!(rel_time(Some((now as f64 - 1.0) * 1000.0), now), "resetting…");
-    // exactly now
-    assert_eq!(rel_time(Some(now as f64 * 1000.0), now), "resetting…");
-    // under a minute
-    assert_eq!(rel_time(Some((now as f64 + 30.0) * 1000.0), now), "<1m");
-    // missing
-    assert_eq!(rel_time(None, now), "unknown");
-}
-
-#[test]
-fn iso_utc_parsing() {
-    // 2026-09-27T12:23:00.000Z → known epoch
-    let ms = parse_iso_utc("2026-09-27T12:23:00.000Z").unwrap();
-    // 2026-09-27 12:23:00 UTC = 1789592580
-    assert_eq!(ms as u64 / 1000, 1_790_511_780);
-    // without millis
-    assert_eq!(parse_iso_utc("2026-01-01T00:00:00Z").unwrap() as u64 / 1000, 1_767_225_600);
-    // leap year Feb 29 2024
-    assert_eq!(parse_iso_utc("2024-02-29T12:00:00Z").unwrap() as u64 / 1000, 1_709_208_000);
-    // garbage
-    assert!(parse_iso_utc("not-a-date").is_none());
-    assert!(parse_iso_utc("").is_none());
-    assert!(parse_iso_utc("2026-13-45T99:99:99Z").is_some()); // lenient, no validation needed
-}
-
-#[test]
-fn elapsed_pct_windows() {
-    let now = 1_000_000u64;
-    // window ends now + 2.5h, duration 5h → 50% elapsed
-    let reset = (now as f64 + 2.5 * 3600.0) * 1000.0;
-    assert_eq!(elapsed_pct(Some(reset), 5 * 3600, now), Some(50));
-    // 0% at window start
-    let reset0 = (now as f64 + 5.0 * 3600.0) * 1000.0;
-    assert_eq!(elapsed_pct(Some(reset0), 5 * 3600, now), Some(0));
-    // 100% at window end
-    let reset100 = now as f64 * 1000.0;
-    assert_eq!(elapsed_pct(Some(reset100), 5 * 3600, now), Some(100));
-    // reset in the past but window start still valid → 100%
-    let stale = (now as f64 - 1000.0) * 1000.0; // ended ~17min ago, 5h window
-    assert_eq!(elapsed_pct(Some(stale), 5 * 3600, now), Some(100));
-    // window start before epoch → None (underflow guard)
-    assert_eq!(elapsed_pct(Some(1.0), 5 * 3600, now), None);
-    // no reset info
-    assert_eq!(elapsed_pct(None, 3600, now), None);
-    // rounding: 1/3 of window = 33
-    let reset3 = (now as f64 + 2.0 * 3600.0) * 1000.0;
-    assert_eq!(elapsed_pct(Some(reset3), 3 * 3600, now), Some(33));
 }
 
 #[test]
@@ -208,8 +98,17 @@ fn plans_table_marks_current_by_exact_name() {
 fn plans_json_marks_current() {
     let out = plans_json("individual-goat");
     assert!(out.starts_with('[') && out.ends_with(']'));
-    assert!(out.contains("\"name\":\"GOAT\",\"price\":\"$10\",\"creditsMonthly\":\"$70\",\"fiveHour\":\"$14\",\"weekly\":\"$35\",\"current\":true"));
-    assert!(out.contains("\"name\":\"Go\",\"price\":\"$1\""));
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let arr = v.as_array().unwrap();
+    let goat = arr.iter().find(|p| p["name"] == "GOAT").unwrap();
+    assert_eq!(goat["price"], "$10");
+    assert_eq!(goat["creditsMonthly"], "$70");
+    assert_eq!(goat["fiveHour"], "$14");
+    assert_eq!(goat["weekly"], "$35");
+    assert_eq!(goat["current"], true);
+    let go = arr.iter().find(|p| p["name"] == "Go").unwrap();
+    assert_eq!(go["price"], "$1");
+    assert_eq!(go["current"], false);
 }
 
 #[test]
@@ -218,18 +117,18 @@ fn render_json_is_valid_and_complete() {
     let out = render_json(&s);
     assert!(out.starts_with('{') && out.ends_with('}'));
     assert!(out.contains("\"plan\":\"GOAT\""));
-    assert!(out.contains("\"monthlyCap\":70.00"));
     assert!(out.contains("\"fiveHour\":{"));
     assert!(out.contains("\"error\":null"));
     // parse round-trip
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["plan"], "GOAT");
+    assert_eq!(v["monthlyCap"], 70.0);
 }
 
 #[test]
 fn plain_render_contains_sections() {
     let s = snapshot_fixture();
-    let out = render_plain(&s, 20);
+    let out = render_plain(&s);
     assert!(out.contains("Command Code Usage"));
     assert!(out.contains("GOAT"));
     assert!(out.contains("Credits:"));
@@ -264,7 +163,7 @@ fn render_free_plan_no_monthly_cap() {
     let out = render(&s, 20);
     assert!(!out.contains("/ $70.00"));
     assert!(out.contains("$61.44 monthly")); // remaining shown, no quota
-    let out_plain = render_plain(&s, 20);
+    let out_plain = render_plain(&s);
     assert!(out_plain.contains("$61.44 monthly"));
 }
 
@@ -330,11 +229,14 @@ fn statusline_templates() {
     // full template
     let d0 = d(true, false);
     let out = render_statusline("{plan} {credits}/{cap} · 5h {5h_bar} · wk {wk_bar}", &d0);
-    let plain = crate::report_render::strip_ansi(&out);
-    assert!(plain.contains("GOAT"));
-    assert!(plain.contains("$59.30/$70.00"));
-    assert!(plain.contains("5h"));
-    assert!(plain.contains("wk"));
+    assert!(out.contains("\x1b["));
+    let plain = d(false, false);
+    let out = render_statusline("{plan} {credits}/{cap} · 5h {5h_bar} · wk {wk_bar}", &plain);
+    assert!(out.contains("GOAT"));
+    assert!(out.contains("$59.30/$70.00"));
+    assert!(out.contains("5h"));
+    assert!(out.contains("wk"));
+    assert!(!out.contains('\x1b'));
 
     // minimal: plan only
     let out = render_statusline("{plan}", &d0);
@@ -342,12 +244,11 @@ fn statusline_templates() {
 
     // pct placeholders
     let out = render_statusline("{5h_pct}|{wk_pct}", &d0);
-    let plain = crate::report_render::strip_ansi(&out);
-    assert_eq!(plain, "20%|10%");
+    assert_eq!(out, "20%|10%");
 
     // used/cap
     let out = render_statusline("{5h_used} of {5h_cap}", &d0);
-    assert_eq!(crate::report_render::strip_ansi(&out), "$2.79 of $14.00");
+    assert_eq!(out, "$2.79 of $14.00");
 
     // credits_bar shows used % of monthly cap
     let out = render_statusline("{credits_bar}", &d0);
@@ -355,11 +256,11 @@ fn statusline_templates() {
 
     // unknown placeholders dropped
     let out = render_statusline("{plan} {bogus} end", &d0);
-    assert_eq!(crate::report_render::strip_ansi(&out), "GOAT  end");
+    assert_eq!(out, "GOAT  end");
 
     // unclosed brace passes through verbatim
     let out = render_statusline("{plan} {oops", &d0);
-    assert_eq!(crate::report_render::strip_ansi(&out), "GOAT {oops");
+    assert_eq!(out, "GOAT {oops");
 
     // ascii bars
     let d1 = d(false, true);
@@ -409,8 +310,7 @@ fn statusline_templates() {
         ascii: false,
     };
     let out = render_statusline("{plan} {5h_pct} {wk_pct} {credits_bar}", &dz);
-    let plain = crate::report_render::strip_ansi(&out);
-    assert!(plain.contains("0%"));
+    assert!(out.contains("0%"));
 }
 
 #[test]

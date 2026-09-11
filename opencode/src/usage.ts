@@ -1,4 +1,9 @@
 import { credits, subscriptions, usageSummary, type Window } from "./api";
+import plansData from "../../core/plans.json";
+
+// Plan table / name rules / monthly caps come from the canonical
+// core/plans.json (also loaded by cmduse-core's build.rs) so the two
+// languages cannot drift.
 
 // Port of the Zed extension's render logic (../src/lib.rs).
 
@@ -38,11 +43,13 @@ export function relTime(resetAtMs: number | undefined, nowSecs: number): string 
 	return "<1m";
 }
 
-/** ISO date → epoch ms (UTC, no offset handling — off by hours at most). */
+/** ISO 8601 → epoch ms. Handles trailing Z or a ±HH:MM / ±HHMM offset. */
 export function parseIsoUtc(s: string): number | undefined {
-	const m = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)Z?/);
+	const m = s.match(
+		/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)(Z|[+-]\d{2}:?\d{2})?$/,
+	);
 	if (!m) return undefined;
-	const [, y, mo, d, h, mi, sec] = m as unknown as [
+	const [, y, mo, d, h, mi, sec, off] = m as unknown as [
 		string,
 		string,
 		string,
@@ -50,37 +57,40 @@ export function parseIsoUtc(s: string): number | undefined {
 		string,
 		string,
 		string,
+		string | undefined,
 	];
-	return Date.UTC(+y, +mo - 1, +d, +h, +mi, Math.floor(+sec));
+	let offsetMs = 0;
+	if (off && off !== "Z") {
+		const sign = off.startsWith("-") ? -1 : 1;
+		const digits = off.slice(1).replace(":", "");
+		const hh = Number(digits.slice(0, 2));
+		const mm = Number(digits.slice(2, 4) || "0");
+		offsetMs = sign * (hh * 60 + mm) * 60_000;
+	}
+	return Date.UTC(+y, +mo - 1, +d, +h, +mi, Math.floor(+sec)) - offsetMs;
 }
 
-const PLAN_CAPS: Record<string, number> = {
-	"individual-go": 10,
-	"individual-goat": 70,
-	"individual-pro": 80,
-	"individual-provider": 0, // PAYG
-	"individual-max": 150,
-	"individual-ultra": 0,
-	"teams-pro": 40,
-};
+const NAME_RULES = plansData.nameRules as Array<{ needles: string[]; name: string }>;
+const DEFAULT_NAME = plansData.defaultName as string;
+const CAPS = plansData.caps as Record<string, number | null>;
+const PLANS = plansData.plans as Array<{
+	name: string;
+	price: string;
+	monthly: string;
+	fiveHour: string;
+	weekly: string;
+}>;
 
 export function planMonthlyCap(planId: string): number | undefined {
-	if (planId.includes("max-20")) return 300;
-	const cap = PLAN_CAPS[planId];
-	return cap && cap > 0 ? cap : undefined;
+	return CAPS[planName(planId)] ?? undefined;
 }
 
 export function planName(planId: string): string {
 	const id = planId.toLowerCase();
-	if (id.includes("max-20")) return "Max 20x";
-	if (id.includes("max")) return "Max 10x";
-	if (id.includes("goat")) return "GOAT";
-	if (id.includes("provider")) return "Provider";
-	if (id.includes("ultra")) return "Ultra";
-	if (id.includes("team")) return "Team Pro";
-	if (id.includes("pro")) return "Pro";
-	if (id.includes("go")) return "Go";
-	return "Free";
+	for (const rule of NAME_RULES) {
+		if (rule.needles.every((n) => id.includes(n))) return rule.name;
+	}
+	return DEFAULT_NAME;
 }
 
 export function windowLine(label: string, w: Window, nowSecs: number): string {
@@ -89,22 +99,13 @@ export function windowLine(label: string, w: Window, nowSecs: number): string {
 }
 
 export function plansTable(current: string): string {
-	const plans: Array<[string, string, string, string, string]> = [
-		["Go", "$1", "$10", "$3", "$6"],
-		["GOAT", "$10", "$70", "$14", "$35"],
-		["Pro", "$20", "$80", "$16", "$40"],
-		["Provider", "$15", "PAYG", "—", "—"],
-		["Max 10x", "$100", "$150", "$45", "$90"],
-		["Max 20x", "$200", "$300", "$90", "$180"],
-		["Team Pro", "$40", "$40", "$12", "$24"],
-	];
 	// Mark by exact plan_name match (not substring): "individual-goat"
 	// contains "go", so substring matching double-marks the Go row.
 	const mine = planName(current);
 	let out = "| Plan | Price | Credits/mo | 5-hour | Weekly |\n|---|---|---|---|---|\n";
-	for (const [name, price, monthly, h5, wk] of plans) {
+	for (const { name, price, monthly, fiveHour, weekly } of PLANS) {
 		const mark = name === mine ? "**" : "";
-		out += `| ${mark}${name}${mark} | ${price}/mo | ${monthly} | ${h5} | ${wk} |\n`;
+		out += `| ${mark}${name}${mark} | ${price}/mo | ${monthly} | ${fiveHour} | ${weekly} |\n`;
 	}
 	out +=
 		"\nWindows throttle only included monthly credits; on-demand (`/extra`) credits are never throttled.\n";

@@ -18,7 +18,7 @@
 		"@types/bun": "latest",
 		"typescript": "^5"
 	},
-	"files": ["dist", "README.md", "LICENSE"],
+	"files": ["dist", "LICENSE"],
 	"keywords": ["opencode", "command-code", "plugin", "provider", "ai-sdk"],
 	"license": "MIT",
 	"publishConfig": {

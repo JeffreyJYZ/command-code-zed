@@ -1,4 +1,4 @@
-const API_BASE = "https://api.commandcode.ai";
+export const API_BASE = "https://api.commandcode.ai";
 
 export function authHeaders(key: string): Record<string, string> {
 	return { Authorization: `Bearer ${key}`, Accept: "application/json" };
@@ -104,8 +104,4 @@ export async function usageSummary(key: string): Promise<Summary> {
 
 export async function providerModels(key: string): Promise<ProviderModelsResp> {
 	return getJson("/provider/v1/models", key, 15_000) as Promise<ProviderModelsResp>;
-}
-
-export async function getPlanInfo(key: string): Promise<SubData> {
-	return subscriptions(key);
 }

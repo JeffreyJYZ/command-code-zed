@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+  pull_request:
 
 jobs:
   workspace:
@@ -13,6 +14,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all-targets
       - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo run -p cmd-usage -- -V          # binary smoke-test
+      - run: cargo package -p cmduse-core --allow-dirty  # crate packages + verifies
 
   zed-ext-wasm:
     runs-on: ubuntu-latest
@@ -34,3 +37,4 @@ jobs:
       - run: bun install
       - run: bun test
       - run: bun run typecheck
+      - run: bun run build

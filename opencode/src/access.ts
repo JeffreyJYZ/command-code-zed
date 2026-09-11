@@ -1,4 +1,4 @@
-import { type Category, canonicalizeModelId, MODEL_CATEGORIES, PLAN_RULES } from "./gating";
+import { type Category, canonicalizeModelId, HARD_BLOCKED, MODEL_CATEGORIES, PLAN_RULES } from "./gating";
 
 export { canonicalizeModelId, PLAN_RULES };
 
@@ -10,30 +10,6 @@ export type PlanLike = {
 	planId: string;
 	purchasedCredits: number;
 	freeCredits: number;
-};
-
-/** Models the API hard-blocks (MODEL_NOT_IN_PLAN 403) per planId, beyond the
- * category rules. Empirically probed — CLI's bundle misses these because it
- * tracks "category" via serving lane, not per-model plan entitlements. */
-const HARD_BLOCKED: Record<string, string[]> = {
-	"individual-goat": [
-		"meta/muse-spark-1.1",
-		"google/gemini-3.5-flash",
-		"google/gemini-3.6-flash",
-		"google/gemini-3.5-flash-lite",
-		"google/gemini-3.1-flash-lite",
-	],
-	"individual-go": [
-		"meta/muse-spark-1.1",
-		"google/gemini-3.5-flash",
-		"google/gemini-3.6-flash",
-		"google/gemini-3.5-flash-lite",
-		"google/gemini-3.1-flash-lite",
-		"meta/muse-spark-1.2",
-		"meta/muse-spark-1.2-contributor",
-		"meta/muse-spark-1.3",
-		"meta/muse-spark-1.3-contributor",
-	],
 };
 
 export function evaluateModelAccess(model: string, plan: PlanLike): { allowed: boolean } {
@@ -60,11 +36,6 @@ export function evaluateModelAccess(model: string, plan: PlanLike): { allowed: b
 	if (blocked) return { allowed: false };
 	if (!rules.allowedCategories.includes(category)) return { allowed: false };
 	return { allowed: true };
-}
-
-/** Filter a live model list down to what the plan allows. */
-export function filterByPlan<T extends { id: string }>(models: T[], plan: PlanLike): T[] {
-	return models.filter((m) => evaluateModelAccess(m.id, plan).allowed);
 }
 
 const KNOWN_KEYS = Object.keys(MODEL_CATEGORIES);

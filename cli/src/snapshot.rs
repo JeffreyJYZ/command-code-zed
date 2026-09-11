@@ -1,7 +1,6 @@
 use crate::api;
-use std::sync::atomic::AtomicBool;
-use crate::render::{CYAN, RESET, Snapshot};
-use std::io::Write;
+use crate::render::Snapshot;
+use std::io::{IsTerminal, Write};
 
 pub fn snapshot() -> Snapshot {
     let mut s = empty_snapshot();
@@ -14,30 +13,13 @@ pub fn snapshot() -> Snapshot {
         }
     };
 
-    let stop = std::sync::Arc::new(AtomicBool::new(false));
-    let stop2 = stop.clone();
-    let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    let writer = std::thread::spawn(move || {
-        let mut tty = std::fs::OpenOptions::new()
-            .write(true)
-            .open("/dev/tty")
-            .ok();
-        let mut i = 0;
-        while !stop2.load(std::sync::atomic::Ordering::Relaxed) {
-            if let Some(f) = tty.as_mut() {
-                // /dev/tty direct — main thread holds stdout lock during redraw
-                write!(
-                    f,
-                    "\r\x1b[2K{CYAN}fetching usage… {}{RESET}",
-                    frames[i % frames.len()]
-                )
-                .ok();
-                f.flush().ok();
-            }
-            i += 1;
-            std::thread::sleep(std::time::Duration::from_millis(80));
-        }
-    });
+    // one-line feedback while the (retrying) fetches run, so a slow network
+    // doesn't look hung before the first/next frame. tty only, cleared below.
+    let tty = std::io::stderr().is_terminal();
+    if tty {
+        eprint!("\r\x1b[2Kfetching usage…");
+        std::io::stderr().flush().ok();
+    }
 
     // three endpoints in parallel — slowest one sets the latency
     let (r_sub, r_credits, r_summary) = {
@@ -52,6 +34,10 @@ pub fn snapshot() -> Snapshot {
             t3.join().unwrap_or_else(|_| Err("summary thread panicked".into())),
         )
     };
+    if tty {
+        eprint!("\r\x1b[2K");
+        std::io::stderr().flush().ok();
+    }
 
     let mut errs: Vec<String> = Vec::new();
     match r_sub {
@@ -70,21 +56,11 @@ pub fn snapshot() -> Snapshot {
         s.err = Some(errs.join("; "));
     }
 
-    stop.store(true, std::sync::atomic::Ordering::Relaxed);
-    let _ = writer.join();
-    if let Ok(mut f) = std::fs::OpenOptions::new().write(true).open("/dev/tty") {
-        // erase spinner line; main redraws status line right after
-        write!(f, "\r\x1b[2K").ok();
-        f.flush().ok();
-    }
     s
 }
 
 fn empty_snapshot() -> Snapshot {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let now = cmduse_core::dates::now_secs();
 
     Snapshot {
         sub: api::SubData {

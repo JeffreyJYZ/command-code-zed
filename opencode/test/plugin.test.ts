@@ -2,24 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { canonicalizeModelId, evaluateModelAccess } from "../src/access";
 import { MODEL_CATEGORIES, PLAN_RULES } from "../src/gating";
 import { isClaude, splitModels } from "../src/models";
-import {
-	bar,
-	compact,
-	money,
-	parseIsoUtc,
-	pctStr,
-	planMonthlyCap,
-	planName,
-	plansTable,
-	relTime,
-	windowLine,
-} from "../src/usage";
+import { bar, pctStr, plansTable, windowLine } from "../src/usage";
 
-const credits = (n: number) => ({
-	planId: "individual-goat",
-	purchasedCredits: n,
-	freeCredits: 0,
-});
+// money/compact/relTime/parseIsoUtc/planName/planMonthlyCap and the core gating
+// behavior are pinned by conformance.test.ts (shared vectors). This file covers
+// only TS-specific logic: canonicalization, wire split, table/status rendering,
+// and gating edges not represented as vectors.
+
+const goat = { planId: "individual-goat", purchasedCredits: 0, freeCredits: 0 };
 
 describe("canonicalizeModelId", () => {
 	test("exact", () => {
@@ -58,98 +48,23 @@ describe("gating tables match CLI", () => {
 	});
 });
 
-describe("evaluateModelAccess", () => {
-	test("purchased credits unlock everything", () => {
-		expect(evaluateModelAccess("claude-opus-5", credits(5)).allowed).toBe(true);
-	});
-	test("go plan: opensource ok, premium blocked", () => {
-		const goat = {
-			planId: "individual-go",
-			purchasedCredits: 0,
-			freeCredits: 0,
-		};
-		expect(evaluateModelAccess("deepseek/deepseek-v4-flash", goat).allowed).toBe(true);
-		expect(evaluateModelAccess("claude-sonnet-5", goat).allowed).toBe(false);
-		expect(evaluateModelAccess("meta/muse-spark-1.2", goat).allowed).toBe(false);
-	});
-	test("goat plan: opensource ok, premium blocked", () => {
-		const goat = {
-			planId: "individual-goat",
-			purchasedCredits: 0,
-			freeCredits: 0,
-		};
-		expect(evaluateModelAccess("z-ai/glm-5.3-flash", goat).allowed).toBe(true);
-		expect(evaluateModelAccess("claude-sonnet-5", goat).allowed).toBe(false);
-	});
-	test("pro plan: sonnet ok, opus blocked", () => {
-		const pro = {
-			planId: "individual-pro",
-			purchasedCredits: 0,
-			freeCredits: 0,
-		};
-		expect(evaluateModelAccess("claude-sonnet-5", pro).allowed).toBe(true);
-		expect(evaluateModelAccess("claude-opus-5", pro).allowed).toBe(false);
-	});
-	test("max allows everything", () => {
-		const max = {
-			planId: "individual-max",
-			purchasedCredits: 0,
-			freeCredits: 0,
-		};
-		expect(evaluateModelAccess("claude-opus-5", max).allowed).toBe(true);
-	});
-	test("unknown model/plan defaults allow", () => {
-		expect(evaluateModelAccess("brand-new-model", credits(0)).allowed).toBe(true);
-		expect(
-			evaluateModelAccess("claude-opus-5", {
-				planId: "individual-free-tier",
-				purchasedCredits: 0,
-				freeCredits: 0,
-			}).allowed,
-		).toBe(true);
-	});
+describe("evaluateModelAccess (edges beyond conformance vectors)", () => {
 	test("newer sibling of premium model inherits premium (claude-fable-5-1)", () => {
-		const goat = {
-			planId: "individual-goat",
-			purchasedCredits: 0,
-			freeCredits: 0,
-		};
 		expect(evaluateModelAccess("claude-fable-5-1", goat).allowed).toBe(false);
 	});
 	test("version-bumped id with no prefix sibling defaults to allow (API enforces)", () => {
-		const goat = {
-			planId: "individual-goat",
-			purchasedCredits: 0,
-			freeCredits: 0,
-		};
 		expect(evaluateModelAccess("claude-sonnet-6", goat).allowed).toBe(true);
-		expect(evaluateModelAccess("meta/muse-spark-1.3", goat).allowed).toBe(true);
 	});
 	test("unprefixed unknown model on gated plan defaults opensource", () => {
-		const goat = {
-			planId: "individual-goat",
-			purchasedCredits: 0,
-			freeCredits: 0,
-		};
 		expect(evaluateModelAccess("newvendor/new-open-model", goat).allowed).toBe(true);
 	});
-	test("empirically hard-blocked models on GOAT (API 403 MODEL_NOT_IN_PLAN)", () => {
-		const goat = {
-			planId: "individual-goat",
-			purchasedCredits: 0,
-			freeCredits: 0,
-		};
+	test("empirically hard-blocked model on GOAT (API 403 MODEL_NOT_IN_PLAN)", () => {
 		expect(evaluateModelAccess("meta/muse-spark-1.1", goat).allowed).toBe(false);
-		expect(evaluateModelAccess("google/gemini-3.5-flash", goat).allowed).toBe(false);
-		expect(evaluateModelAccess("google/gemini-3.5-flash-lite", goat).allowed).toBe(false);
 	});
 	test("purchased credits override hard block", () => {
-		const goat = {
-			planId: "individual-goat",
-			purchasedCredits: 5,
-			freeCredits: 0,
-		};
-		expect(evaluateModelAccess("meta/muse-spark-1.1", goat).allowed).toBe(true);
+		expect(
+			evaluateModelAccess("meta/muse-spark-1.1", { ...goat, purchasedCredits: 5 }).allowed,
+		).toBe(true);
 	});
 });
 
@@ -171,12 +86,6 @@ describe("wire split", () => {
 });
 
 describe("usage render", () => {
-	test("money/compact", () => {
-		expect(money(1.5)).toBe("$1.50");
-		expect(compact(28_129_791)).toBe("28.1M");
-		expect(compact(12_345)).toBe("12.3K");
-		expect(compact(42)).toBe("42");
-	});
 	test("bar", () => {
 		expect(bar(0, 10)).toBe("░".repeat(12));
 		expect(bar(10, 10)).toBe("█".repeat(12));
@@ -185,23 +94,6 @@ describe("usage render", () => {
 	test("pctStr", () => {
 		expect(pctStr(5, 10)).toBe("50%");
 		expect(pctStr(5, 0)).toBe("—");
-	});
-	test("relTime", () => {
-		const now = 1_000_000;
-		expect(relTime((now + 3600) * 1000, now)).toBe("1h 0m");
-		expect(relTime((now + 120) * 1000, now)).toBe("2m");
-		expect(relTime((now - 5) * 1000, now)).toBe("resetting…");
-		expect(relTime(undefined, now)).toBe("unknown");
-	});
-	test("parseIsoUtc", () => {
-		expect(parseIsoUtc("2026-09-27T12:23:00.000Z")).toBe(1_790_511_780_000);
-		expect(parseIsoUtc("garbage")).toBeUndefined();
-	});
-	test("plan caps + names", () => {
-		expect(planMonthlyCap("individual-goat")).toBe(70);
-		expect(planMonthlyCap("individual-provider")).toBeUndefined();
-		expect(planName("individual-goat")).toBe("GOAT");
-		expect(planName("individual-max-20")).toBe("Max 20x");
 	});
 	test("windowLine", () => {
 		const line = windowLine("5-hour", { used: 7, cap: 14, resetAt: 120_000 }, 60);

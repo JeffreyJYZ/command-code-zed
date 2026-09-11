@@ -1,8 +1,7 @@
 mod api;
 mod cli;
-mod update_check;
 mod config;
-mod gating;
+mod paths;
 mod render;
 mod report_render;
 mod reports;
@@ -32,16 +31,7 @@ fn main() {
     }
 
     if let Some(cs) = args.config_set {
-        if let Err(e) = config::set(
-            cs.interval,
-            cs.width,
-            cs.sl_template,
-            cs.sl_colors,
-            cs.sl_ascii,
-            cs.burst_on,
-            cs.bursts,
-            cs.notify,
-        ) {
+        if let Err(e) = config::set(&cs) {
             eprintln!("error: {e}");
             std::process::exit(1);
         }
@@ -95,7 +85,7 @@ fn main() {
             let subtitle = if args.local {
                 "local, CLI sessions".to_string()
             } else if let Some(tz) = args.tz {
-                format!("all harnesses, UTC{}{:02}:{:02}", if tz < 0 { '-' } else { '+' }, tz.abs() / 3600, (tz.abs() % 3600) / 60)
+                format!("all harnesses, UTC{}", cmduse_core::dates::tz_offset_suffix(tz))
             } else {
                 "all harnesses, UTC".to_string()
             };
@@ -128,12 +118,8 @@ fn main() {
     }
 
     let cfg = config::load();
-    let interval = args
-        .interval
-        .or(Some(cfg.interval_secs))
-        .unwrap_or(5)
-        .clamp(1, 86_400);
-    let bar_width = args.bar_width.or(Some(cfg.bar_width)).unwrap_or(20).max(5);
+    let interval = args.interval.unwrap_or(cfg.interval_secs).clamp(1, 86_400);
+    let bar_width = args.bar_width.unwrap_or(cfg.bar_width).max(5);
     // spend-burst sparkline is opt-in: -b/--bursts on the CLI turns it on for
     // this run; otherwise it follows the config flag (default off).
     let burst_on = args.bursts.is_some() || cfg.burst_enabled;
@@ -149,18 +135,11 @@ fn main() {
         if args.json {
             println!("{}", render::render_json(&s));
         } else if args.plain {
-            print!("{}", render::render_plain(&s, bar_width));
+            print!("{}", render::render_plain(&s));
         } else {
             print!("{}", render::render(&s, bar_width));
         }
         return;
-    }
-
-    // Watch mode: check update BEFORE first frame draw. check_sync() blocks
-    // once per day (≤5s); async eprintln here could land mid-redraw and tear
-    // the in-place frame.
-    if let Some(msg) = update_check::check_sync() {
-        eprintln!("{msg}");
     }
 
     // live mode: true in-place redraw. Frame's last line = status line,
@@ -225,7 +204,7 @@ fn main() {
         let text = if compact {
             compact_dashboard(&s, if burst_on { &history } else { &[] })
         } else if args.plain {
-            render::render_plain(&s, bar_width)
+            render::render_plain(&s)
         } else {
             render::render(&s, bar_width)
         };
@@ -456,14 +435,14 @@ fn models_cmd(args: &cli::Args) {
                 for m in &list {
                     if args.gated {
                         // annotate every model with the gating verdict
-                        let a = gating::check(&m.id, &plan_id, unlocked);
+                        let (allowed, reason) = cmduse_core::gate(&m.id, &plan_id, unlocked);
                         let line = serde_json::json!({
                             "id": m.id,
                             "name": m.name,
                             "context_length": m.context_length,
                             "owned_by": m.owned_by,
-                            "allowed": a.allowed,
-                            "reason": a.reason,
+                            "allowed": allowed,
+                            "reason": reason,
                         });
                         println!("{line}");
                     } else {
@@ -475,7 +454,7 @@ fn models_cmd(args: &cli::Args) {
             }
             let list: Vec<_> = if args.gated {
                 list.into_iter()
-                    .filter(|m| gating::allowed(&m.id, &plan_id, unlocked))
+                    .filter(|m| cmduse_core::gate_allowed(&m.id, &plan_id, unlocked))
                     .collect()
             } else {
                 list
@@ -532,15 +511,21 @@ fn statusline_cmd(args: &cli::Args) {
         std::process::exit(1);
     }
     if args.json {
-        print!(
-            "{{\"plan\":\"{plan}\",\"monthlyRemaining\":{:.2},\"monthlyCap\":{:.2},\"fiveHourUsed\":{:.2},\"fiveHourCap\":{:.2},\"weeklyUsed\":{:.2},\"weeklyCap\":{:.2}}}",
-            s.credits.credits.monthly_credits,
-            cap,
-            s.credits.window_limits.five_hour.as_ref().map(|w| w.used).unwrap_or(0.0),
-            s.credits.window_limits.five_hour.as_ref().map(|w| w.cap).unwrap_or(0.0),
-            s.credits.window_limits.weekly.as_ref().map(|w| w.used).unwrap_or(0.0),
-            s.credits.window_limits.weekly.as_ref().map(|w| w.cap).unwrap_or(0.0),
-        );
+        let w = |o: &Option<api::Window>| -> (f64, f64) {
+            (o.as_ref().map(|w| w.used).unwrap_or(0.0), o.as_ref().map(|w| w.cap).unwrap_or(0.0))
+        };
+        let (h5u, h5c) = w(&s.credits.window_limits.five_hour);
+        let (wku, wkc) = w(&s.credits.window_limits.weekly);
+        let out = serde_json::json!({
+            "plan": plan,
+            "monthlyRemaining": s.credits.credits.monthly_credits,
+            "monthlyCap": cap,
+            "fiveHourUsed": h5u,
+            "fiveHourCap": h5c,
+            "weeklyUsed": wku,
+            "weeklyCap": wkc,
+        });
+        print!("{out}");
         return;
     }
     let h5 = s
@@ -562,8 +547,8 @@ fn statusline_cmd(args: &cli::Args) {
         let secs = cmduse_core::pace_eta(w.reset_at, dur, w.used, w.cap, now)?;
         Some(format!("on pace to hit cap in {}", cmduse_core::rel_time(Some(secs * 1000.0), Some(now))))
     };
-    let h5_eta = eta_of(&s.credits.window_limits.five_hour, 5 * 3600);
-    let wk_eta = eta_of(&s.credits.window_limits.weekly, 7 * 86400);
+    let h5_eta = eta_of(&s.credits.window_limits.five_hour, cmduse_core::FIVE_HOUR_SECS);
+    let wk_eta = eta_of(&s.credits.window_limits.weekly, cmduse_core::WEEKLY_SECS);
     let d = report_render::StatusData {
         plan,
         monthly_remaining: s.credits.credits.monthly_credits,

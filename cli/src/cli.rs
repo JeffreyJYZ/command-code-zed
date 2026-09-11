@@ -78,7 +78,10 @@ pub fn parse_args() -> Args {
             "--local" => a.local = true,
             "--gated" => a.gated = true,
             "--tz" => {
-                let v = it.next().expect("tz needs a value");
+                let Some(v) = it.next() else {
+                    eprintln!("--tz needs an offset like +05:30 or -08:00");
+                    std::process::exit(2);
+                };
                 match parse_tz(&v) {
                     Some(secs) => a.tz = Some(secs),
                     None => {
@@ -88,7 +91,10 @@ pub fn parse_args() -> Args {
                 }
             }
             "-i" | "--interval" => {
-                let v = it.next().expect("interval needs a value");
+                let Some(v) = it.next() else {
+                    eprintln!("-i needs a duration 1s–24h (e.g. 30, 30s, 5m, 1h)");
+                    std::process::exit(2);
+                };
                 match parse_duration(&v) {
                     Some(n) if (1..=86_400).contains(&n) => a.interval = Some(n),
                     _ => {
@@ -98,7 +104,10 @@ pub fn parse_args() -> Args {
                 }
             }
             "-w" | "--bar-width" => {
-                let v = it.next().expect("bar-width needs a value");
+                let Some(v) = it.next() else {
+                    eprintln!("-w needs a number 5–200");
+                    std::process::exit(2);
+                };
                 match v.parse::<usize>() {
                     Ok(n) if (5..=200).contains(&n) => a.bar_width = Some(n),
                     _ => {
@@ -108,7 +117,10 @@ pub fn parse_args() -> Args {
                 }
             }
             "-b" | "--bursts" => {
-                let v = it.next().expect("bursts needs a value");
+                let Some(v) = it.next() else {
+                    eprintln!("-b needs a number 5–240");
+                    std::process::exit(2);
+                };
                 match v.parse::<usize>() {
                     Ok(n) if (5..=240).contains(&n) => a.bursts = Some(n),
                     _ => {

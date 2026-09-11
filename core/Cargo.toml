@@ -5,3 +5,12 @@ edition = "2021"
 description = "Shared pure logic for cmduse (CLI) and the Command Code Zed extension: plan table, date/ISO helpers, window math, formatting."
 license = "MIT"
 repository = "https://github.com/JeffreyJYZ/command-code-zed"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[build-dependencies]
+serde_json = "1"
+
+[dev-dependencies]
+serde_json = "1"

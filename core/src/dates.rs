@@ -70,13 +70,17 @@ pub fn civil_from_days(days: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
-/// today as UTC YYYY-MM-DD
-pub fn today_utc() -> String {
-    let secs = std::time::SystemTime::now()
+/// Current epoch seconds (0 if the clock is before the epoch).
+pub fn now_secs() -> u64 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
-        .unwrap_or(0);
-    civil_from_days(secs as i64 / 86400)
+        .unwrap_or(0)
+}
+
+/// today as UTC YYYY-MM-DD
+pub fn today_utc() -> String {
+    civil_from_days(now_secs() as i64 / 86400)
 }
 
 /// hour boundary epoch → "YYYY-MM-DDTHH:00:00.000Z"
@@ -109,4 +113,11 @@ pub fn hour_label(epoch: u64) -> String {
     let days = hour_start as i64 / 86400;
     let h = (hour_start % 86400) / 3600;
     format!("{} {h:02}:00", &civil_from_days(days)[5..])
+}
+
+/// UTC-offset seconds east → "-08:00" / "+05:30".
+pub fn tz_offset_suffix(tz_secs: i64) -> String {
+    let sign = if tz_secs < 0 { '-' } else { '+' };
+    let a = tz_secs.abs();
+    format!("{sign}{:02}:{:02}", a / 3600, (a % 3600) / 60)
 }

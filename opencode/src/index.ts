@@ -1,11 +1,11 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin";
-import { whoami } from "./api";
+import { API_BASE, whoami } from "./api";
 import { resolveKey } from "./key";
 import { loadModels } from "./models";
 import { plansTable, renderUsage } from "./usage";
 
-const PROVIDER_BASE = "https://api.commandcode.ai/provider/v1";
+const PROVIDER_BASE = `${API_BASE}/provider/v1`;
 
 type SdkModel = {
 	id: string;
@@ -19,7 +19,12 @@ type SdkModel = {
 		toolcall: boolean;
 		input: { text: boolean; audio: boolean; image: boolean; video: boolean; pdf: boolean };
 		output: { text: boolean; audio: boolean; image: boolean; video: boolean; pdf: boolean };
-		interleaved: boolean;
+		/** A `{field}` object names the wire field reasoning must round-trip
+		 * through (openai-compatible: "reasoning_content"). Without it,
+		 * DeepSeek/GLM/Kimi reject the next request once an assistant turn
+		 * carries no reasoning (compaction, model switch):
+		 * "reasoning_content must be passed back". */
+		interleaved: boolean | { field: string };
 	};
 	cost: { input: number; output: number; cache: { read: number; write: number } };
 	limit: { context: number; output: number };
@@ -27,6 +32,19 @@ type SdkModel = {
 	options: Record<string, unknown>;
 	headers: Record<string, string>;
 	release_date: string;
+	/** opencode's config-hook model merge reads top-level `interleaved`;
+	 * its provider.models hook reads `capabilities.interleaved`. Set both. */
+	interleaved?: boolean | { field: string };
+};
+
+/** Every Command Code model shares these; hoisted so each record doesn't rebuild them. */
+const MODEL_CAPABILITIES: Omit<SdkModel["capabilities"], "interleaved"> = {
+	temperature: true,
+	reasoning: true,
+	attachment: false,
+	toolcall: true,
+	input: { text: true, audio: false, image: false, video: false, pdf: false },
+	output: { text: true, audio: false, image: false, video: false, pdf: false },
 };
 
 /** Full ModelV2 shapes — the provider.models hook must return complete records. */
@@ -34,6 +52,7 @@ function toModelDefs(
 	models: Array<{ id: string; name: string; contextLength: number }>,
 	providerID: string,
 	npm: string,
+	interleaved: boolean | { field: string } = false,
 ): Record<string, SdkModel> {
 	return Object.fromEntries(
 		models.map((m) => [
@@ -43,21 +62,14 @@ function toModelDefs(
 				providerID,
 				api: { id: m.id, url: PROVIDER_BASE, npm },
 				name: m.name,
-				capabilities: {
-					temperature: true,
-					reasoning: true,
-					attachment: false,
-					toolcall: true,
-					interleaved: false,
-					input: { text: true, audio: false, image: false, video: false, pdf: false },
-					output: { text: true, audio: false, image: false, video: false, pdf: false },
-				},
+				capabilities: { ...MODEL_CAPABILITIES, interleaved },
 				cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
 				limit: { context: m.contextLength || 128_000, output: 32_000 },
 				status: "active" as const,
 				options: {},
 				headers: {},
 				release_date: "",
+				...(interleaved !== false ? { interleaved } : {}),
 			},
 		]),
 	);
@@ -140,7 +152,12 @@ export const CommandCodePlugin: Plugin = async (_input) => {
 				? toModelDefs(split.claude, "command-code-anthropic", "@ai-sdk/anthropic")
 				: {};
 			const openDefs = split
-				? toModelDefs(split.open, "command-code-openai", "@ai-sdk/openai-compatible")
+				? toModelDefs(
+						split.open,
+						"command-code-openai",
+						"@ai-sdk/openai-compatible",
+						{ field: "reasoning_content" },
+					)
 				: {};
 
 			const userAnthropic = existing("command-code-anthropic");

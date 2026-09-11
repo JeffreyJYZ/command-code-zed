@@ -1,5 +1,5 @@
 use crate::api::{CreditsResp, SubData, UsageSummary};
-pub use cmduse_core::{compact, money, plan_monthly_cap, plan_name};
+pub use cmduse_core::{compact, money, plan_monthly_cap, plan_name, PLANS};
 
 pub const RESET: &str = "\x1b[0m";
 pub const DIM: &str = "\x1b[2m";
@@ -9,7 +9,7 @@ pub const YELLOW: &str = "\x1b[33m";
 pub const RED: &str = "\x1b[31m";
 pub const CYAN: &str = "\x1b[36m";
 
-fn color_for(pct: f64) -> &'static str {
+pub fn color_for(pct: f64) -> &'static str {
     if pct >= 90.0 {
         RED
     } else if pct >= 70.0 {
@@ -38,17 +38,6 @@ pub fn rel_time(reset_at: Option<f64>, now: u64) -> String {
     cmduse_core::rel_time(reset_at, Some(now))
 }
 
-/// Plan comparison data: (name, price, credits/mo, 5-hour, weekly).
-pub const PLANS: [(&str, &str, &str, &str, &str); 7] = [
-    ("Go", "$1", "$10", "$3", "$6"),
-    ("GOAT", "$10", "$70", "$14", "$35"),
-    ("Pro", "$20", "$80", "$16", "$40"),
-    ("Provider", "$15", "PAYG", "—", "—"),
-    ("Max 10x", "$100", "$150", "$45", "$90"),
-    ("Max 20x", "$200", "$300", "$90", "$180"),
-    ("Team Pro", "$40", "$40", "$12", "$24"),
-];
-
 /// Plan comparison table (mirrors the opencode plugin's plans table). The
 /// current plan row is shown with a leading "*" and, when `colors`, in bold.
 pub fn plans_table(current_plan_id: &str, colors: bool) -> String {
@@ -58,7 +47,7 @@ pub fn plans_table(current_plan_id: &str, colors: bool) -> String {
         "{BOLD}{:<10} {:>8} {:>11} {:>8} {:>8}{RESET}\n",
         "Plan", "Price", "Credits/mo", "5-hour", "Weekly"
     );
-    for (name, price, monthly, h5, wk) in PLANS {
+    for &(name, price, monthly, h5, wk) in PLANS {
         if name == mine {
             o.push_str(&format!(
                 "{hl}*{:<9} {:>6}/mo {:>11} {:>8} {:>8}{rst}\n",
@@ -78,59 +67,58 @@ pub fn plans_table(current_plan_id: &str, colors: bool) -> String {
 /// Plan table as JSON: array of {name, price, creditsMonthly, fiveHour, weekly, current}.
 pub fn plans_json(current_plan_id: &str) -> String {
     let mine = plan_name(current_plan_id);
-    let items: Vec<String> = PLANS
+    let items: Vec<serde_json::Value> = PLANS
         .iter()
         .map(|(name, price, monthly, h5, wk)| {
-            format!(
-                "{{\"name\":\"{name}\",\"price\":\"{price}\",\"creditsMonthly\":\"{monthly}\",\"fiveHour\":\"{h5}\",\"weekly\":\"{wk}\",\"current\":{}}}",
-                name == &mine
-            )
+            serde_json::json!({
+                "name": name,
+                "price": price,
+                "creditsMonthly": monthly,
+                "fiveHour": h5,
+                "weekly": wk,
+                "current": *name == mine,
+            })
         })
         .collect();
-    format!("[{}]", items.join(","))
+    serde_json::Value::Array(items).to_string()
 }
 
 /// Machine-readable dashboard, one JSON object. Nested windows mirror the
 /// CLI's own JSON (camelCase fields).
 pub fn render_json(s: &Snapshot) -> String {
-    fn win(w: &Option<crate::api::Window>) -> String {
+    use serde_json::{json, Value};
+
+    fn win(w: &Option<crate::api::Window>) -> Value {
         match w {
-            Some(w) => format!(
-                "{{\"used\":{:.2},\"cap\":{:.2},\"exceeded\":{},\"resetAt\":{}}}",
-                w.used,
-                w.cap,
-                w.exceeded,
-                w.reset_at.map(|r| format!("{r:.0}")).unwrap_or_else(|| "null".into()),
-            ),
-            None => "null".into(),
+            Some(w) => json!({
+                "used": w.used,
+                "cap": w.cap,
+                "exceeded": w.exceeded,
+                "resetAt": w.reset_at,
+            }),
+            None => Value::Null,
         }
     }
-    let cap = plan_monthly_cap(&s.sub.plan_id);
-    let cap_json = cap.map(|c| format!("{c:.2}")).unwrap_or_else(|| "null".into());
-    let err = match &s.err {
-        Some(e) => format!("\"{}\"", e.replace('\\', "\\\\").replace('"', "\\\"")),
-        None => "null".into(),
-    };
-    format!(
-        "{{\"plan\":\"{}\",\"status\":\"{}\",\"periodEnd\":{},\"monthlyCredits\":{:.2},\"monthlyCap\":{},\"purchasedCredits\":{:.2},\"freeCredits\":{:.2},\"fiveHour\":{},\"weekly\":{},\"summary\":{{\"requests\":{},\"cost\":{:.2},\"tokensIn\":{},\"tokensOut\":{},\"successRate\":{:.0}}},\"error\":{err}}}",
-        plan_name(&s.sub.plan_id),
-        s.sub.status,
-        s.sub.current_period_end
-            .as_ref()
-            .map(|e| format!("\"{}\"", &e[..10.min(e.len())]))
-            .unwrap_or_else(|| "null".into()),
-        s.credits.credits.monthly_credits,
-        cap_json,
-        s.credits.credits.purchased_credits,
-        s.credits.credits.free_credits,
-        win(&s.credits.window_limits.five_hour),
-        win(&s.credits.window_limits.weekly),
-        s.summary.total_count,
-        s.summary.total_cost,
-        s.summary.total_tokens_in,
-        s.summary.total_tokens_out,
-        s.summary.success_rate,
-    )
+    json!({
+        "plan": plan_name(&s.sub.plan_id),
+        "status": s.sub.status,
+        "periodEnd": s.sub.current_period_end.as_ref().map(|e| &e[..10.min(e.len())]),
+        "monthlyCredits": s.credits.credits.monthly_credits,
+        "monthlyCap": plan_monthly_cap(&s.sub.plan_id),
+        "purchasedCredits": s.credits.credits.purchased_credits,
+        "freeCredits": s.credits.credits.free_credits,
+        "fiveHour": win(&s.credits.window_limits.five_hour),
+        "weekly": win(&s.credits.window_limits.weekly),
+        "summary": {
+            "requests": s.summary.total_count,
+            "cost": s.summary.total_cost,
+            "tokensIn": s.summary.total_tokens_in,
+            "tokensOut": s.summary.total_tokens_out,
+            "successRate": s.summary.success_rate,
+        },
+        "error": s.err,
+    })
+    .to_string()
 }
 
 /// date/ISO helpers live in cmduse-core; re-export here (tests + render use it)
@@ -246,9 +234,9 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
     }
     match (&s.credits.window_limits.five_hour, &s.credits.window_limits.weekly) {
         (Some(h5), Some(wk)) => {
-            o.push_str(&window_line("5-hour", h5, s.now, bar_width, Some(5 * 3600)));
+            o.push_str(&window_line("5-hour", h5, s.now, bar_width, Some(cmduse_core::FIVE_HOUR_SECS)));
             o.push('\n');
-            o.push_str(&window_line("Weekly", wk, s.now, bar_width, Some(7 * 86400)));
+            o.push_str(&window_line("Weekly", wk, s.now, bar_width, Some(cmduse_core::WEEKLY_SECS)));
             o.push('\n');
         }
         (None, None) => {
@@ -256,11 +244,11 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
         }
         (h5, wk) => {
             if let Some(w) = h5 {
-                o.push_str(&window_line("5-hour", w, s.now, bar_width, Some(5 * 3600)));
+                o.push_str(&window_line("5-hour", w, s.now, bar_width, Some(cmduse_core::FIVE_HOUR_SECS)));
                 o.push('\n');
             }
             if let Some(w) = wk {
-                o.push_str(&window_line("Weekly", w, s.now, bar_width, Some(7 * 86400)));
+                o.push_str(&window_line("Weekly", w, s.now, bar_width, Some(cmduse_core::WEEKLY_SECS)));
                 o.push('\n');
             }
         }
@@ -280,7 +268,7 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
 }
 
 /// One-shot plain output (no ANSI colors), for scripts.
-pub fn render_plain(s: &Snapshot, bar_width: usize) -> String {
+pub fn render_plain(s: &Snapshot) -> String {
     let mut o = String::new();
     o.push_str(&format!(
         "Command Code Usage · {} · {}\n",
@@ -318,7 +306,6 @@ pub fn render_plain(s: &Snapshot, bar_width: usize) -> String {
         compact(s.summary.total_tokens_in),
         compact(s.summary.total_tokens_out),
     ));
-    let _ = bar_width;
     o
 }
 

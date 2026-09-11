@@ -1,8 +1,7 @@
 use crate::api;
-use cmduse_core::dates::{civil_from_days, day_shift, hour_label, iso_hour_start, parse_iso_utc, today_utc};
+use cmduse_core::dates::{civil_from_days, day_shift, hour_label, iso_hour_start, now_secs, parse_iso_utc, today_utc, tz_offset_suffix};
 use serde::Deserialize;
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 #[derive(Deserialize)]
 struct Line {
     #[serde(rename = "type")]
@@ -46,12 +45,16 @@ pub struct Totals {
 
 impl Totals {
     fn add(&mut self, u: &Usage) {
-        self.requests += 1;
-        self.usage.input_tokens += u.input_tokens;
-        self.usage.output_tokens += u.output_tokens;
-        self.usage.cache_read_tokens += u.cache_read_tokens;
-        self.usage.cache_write_tokens += u.cache_write_tokens;
-        self.usage.cost_usd += u.cost_usd;
+        self.merge(&Totals { requests: 1, usage: *u });
+    }
+
+    fn merge(&mut self, o: &Totals) {
+        self.requests += o.requests;
+        self.usage.input_tokens += o.usage.input_tokens;
+        self.usage.output_tokens += o.usage.output_tokens;
+        self.usage.cache_read_tokens += o.usage.cache_read_tokens;
+        self.usage.cache_write_tokens += o.usage.cache_write_tokens;
+        self.usage.cost_usd += o.usage.cost_usd;
     }
 }
 
@@ -70,14 +73,35 @@ pub struct LocalData {
     pub total: Totals,
 }
 
-fn data_dir() -> PathBuf {
-    let home: PathBuf = std::env::var("HOME").unwrap_or_else(|_| "/".into()).into();
-    home.join(".commandcode/projects")
-}
-
 /// day key = UTC YYYY-MM-DD from ISO timestamp
 fn day_of(ts: &str) -> Option<String> {
     ts.get(0..10).map(|s| s.to_string())
+}
+
+/// (project dir name, file contents) for every session JSONL under
+/// `~/.commandcode/projects`, skipping checkpoints/metadata. Shared by the
+/// daily and hourly local scans so the walk/filter lives in one place.
+fn session_files() -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(crate::paths::home().join(".commandcode/projects")) else {
+        return out;
+    };
+    for proj in entries.flatten() {
+        let proj_name = proj.file_name().to_string_lossy().to_string();
+        let Ok(files) = std::fs::read_dir(proj.path()) else {
+            continue;
+        };
+        for f in files.flatten() {
+            let name = f.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".jsonl") || name.contains("checkpoints") {
+                continue;
+            }
+            if let Ok(text) = std::fs::read_to_string(f.path()) {
+                out.push((proj_name.clone(), text));
+            }
+        }
+    }
+    out
 }
 
 pub fn load_local() -> LocalData {
@@ -89,58 +113,36 @@ pub fn load_local() -> LocalData {
         total: Totals::default(),
     };
 
-    let dir = data_dir();
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return data;
-    };
-
-    for proj in entries.flatten() {
-        let proj_name = proj.file_name().to_string_lossy().to_string();
-        let Ok(files) = std::fs::read_dir(proj.path()) else {
-            continue;
-        };
-        for f in files.flatten() {
-            let name = f.file_name().to_string_lossy().to_string();
-            // skip checkpoints and non-sessions
-            if name.ends_with(".meta.json") || !name.ends_with(".jsonl") {
-                continue;
-            }
-            if name.contains("checkpoints") {
-                continue;
-            }
-            let Ok(text) = std::fs::read_to_string(f.path()) else {
+    for (proj_name, text) in session_files() {
+        let mut is_session_file = false;
+        for line in text.lines() {
+            let Ok(l) = serde_json::from_str::<Line>(line) else {
                 continue;
             };
-            let mut is_session_file = false;
-            for line in text.lines() {
-                let Ok(l) = serde_json::from_str::<Line>(line) else {
-                    continue;
-                };
-                match l.kind.as_str() {
-                    "session" => {
-                        data.sessions += 1;
-                        is_session_file = true;
-                    }
-                    "message" => {
-                        let Some(u) = l.usage else { continue };
-                        // only assistant (model) messages carry usage; guard anyway
-                        if l.message.as_ref().and_then(|m| m.role.as_deref()) == Some("user") {
-                            continue;
-                        }
-                        let bucket = |t: &mut Totals| t.add(&u);
-                        if let Some(day) = day_of(&l.timestamp) {
-                            bucket(data.by_day.entry(day).or_default());
-                        }
-                        if let Some(m) = &l.model {
-                            bucket(data.by_model.entry(m.clone()).or_default());
-                        }
-                        if is_session_file {
-                            bucket(data.by_project.entry(proj_name.clone()).or_default());
-                        }
-                        bucket(&mut data.total);
-                    }
-                    _ => {}
+            match l.kind.as_str() {
+                "session" => {
+                    data.sessions += 1;
+                    is_session_file = true;
                 }
+                "message" => {
+                    let Some(u) = l.usage else { continue };
+                    // only assistant (model) messages carry usage; guard anyway
+                    if l.message.as_ref().and_then(|m| m.role.as_deref()) == Some("user") {
+                        continue;
+                    }
+                    let bucket = |t: &mut Totals| t.add(&u);
+                    if let Some(day) = day_of(&l.timestamp) {
+                        bucket(data.by_day.entry(day).or_default());
+                    }
+                    if let Some(m) = &l.model {
+                        bucket(data.by_model.entry(m.clone()).or_default());
+                    }
+                    if is_session_file {
+                        bucket(data.by_project.entry(proj_name.clone()).or_default());
+                    }
+                    bucket(&mut data.total);
+                }
+                _ => {}
             }
         }
     }
@@ -159,15 +161,8 @@ fn iso_day_start(day: &str, tz: i64) -> String {
         format!("{day}T00:00:00.000Z")
     } else {
         // explicit offset: core parses it and shifts to UTC
-        format!("{day}T00:00:00{}", tz_suffix(tz))
+        format!("{day}T00:00:00{}", tz_offset_suffix(tz))
     }
-}
-
-/// UTC-offset seconds → "+HH:MM" / "-HH:MM".
-fn tz_suffix(tz: i64) -> String {
-    let sign = if tz < 0 { '-' } else { '+' };
-    let a = tz.abs();
-    format!("{sign}{:02}:{:02}", a / 3600, (a % 3600) / 60)
 }
 
 /// Civil "today" in the given fixed offset.
@@ -175,7 +170,7 @@ fn today_in_tz(tz: i64) -> String {
     if tz == 0 {
         return today_utc();
     }
-    let now = now_epoch() as i64;
+    let now = now_secs() as i64;
     civil_from_days((now - tz).div_euclid(86400))
 }
 
@@ -258,12 +253,7 @@ pub fn load_account_daily(days: usize, key: &str, tz: i64) -> Result<ByDay, Stri
 pub fn sum_days(by_day: &ByDay) -> Totals {
     let mut t = Totals::default();
     for v in by_day.values() {
-        t.requests += v.requests;
-        t.usage.input_tokens += v.usage.input_tokens;
-        t.usage.output_tokens += v.usage.output_tokens;
-        t.usage.cache_read_tokens += v.usage.cache_read_tokens;
-        t.usage.cache_write_tokens += v.usage.cache_write_tokens;
-        t.usage.cost_usd += v.usage.cost_usd;
+        t.merge(v);
     }
     t
 }
@@ -273,18 +263,11 @@ pub fn sum_days(by_day: &ByDay) -> Totals {
 // cum(hour start) - cum(next hour start). Today's in-progress hour =
 // cum(hour start) itself.
 
-fn now_epoch() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
-
 /// Account-wide usage for the last `hours` hours, one row per hour bucket
 /// (oldest first, current hour last). Includes all harnesses.
 pub fn load_account_hourly(hours: usize, key: &str, tz: i64) -> Result<Vec<(String, Totals)>, String> {
     let hours = hours.max(1);
-    let now = now_epoch();
+    let now = now_secs();
     // bucket boundaries in the requested offset: shift to local, floor to the
     // hour, then shift back to UTC to form the `since` instant. Labels use the
     // local hour.
@@ -341,7 +324,7 @@ pub fn load_account_hourly(hours: usize, key: &str, tz: i64) -> Result<Vec<(Stri
 /// Returns (label, totals) oldest-first for the last `hours` hours, UTC.
 pub fn load_local_hourly(hours: usize) -> Vec<(String, Totals)> {
     let hours = hours.max(1);
-    let now = now_epoch();
+    let now = now_secs();
     let current_hour = now - now % 3600;
     let oldest = current_hour - (hours as u64 - 1) * 3600;
 
@@ -354,36 +337,20 @@ pub fn load_local_hourly(hours: usize) -> Vec<(String, Totals)> {
     };
 
     let mut by_hour: BTreeMap<u64, Totals> = BTreeMap::new();
-    let dir = data_dir();
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return Vec::new();
-    };
-    for proj in entries.flatten() {
-        let Ok(files) = std::fs::read_dir(proj.path()) else {
-            continue;
-        };
-        for f in files.flatten() {
-            let name = f.file_name().to_string_lossy().to_string();
-            if !name.ends_with(".jsonl") || name.contains("checkpoints") {
-                continue;
-            }
-            let Ok(text) = std::fs::read_to_string(f.path()) else {
+    for (_proj, text) in session_files() {
+        for line in text.lines() {
+            let Ok(l) = serde_json::from_str::<Line>(line) else {
                 continue;
             };
-            for line in text.lines() {
-                let Ok(l) = serde_json::from_str::<Line>(line) else {
-                    continue;
-                };
-                if l.kind != "message" {
-                    continue;
-                }
-                let Some(u) = l.usage else { continue };
-                if l.message.as_ref().and_then(|m| m.role.as_deref()) == Some("user") {
-                    continue;
-                }
-                if let Some(h) = bucket_of(&l.timestamp) {
-                    by_hour.entry(h).or_default().add(&u);
-                }
+            if l.kind != "message" {
+                continue;
+            }
+            let Some(u) = l.usage else { continue };
+            if l.message.as_ref().and_then(|m| m.role.as_deref()) == Some("user") {
+                continue;
+            }
+            if let Some(h) = bucket_of(&l.timestamp) {
+                by_hour.entry(h).or_default().add(&u);
             }
         }
     }

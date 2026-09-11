@@ -1,0 +1,52 @@
+{
+	"money": [
+		{ "in": 0.0, "out": "$0.00" },
+		{ "in": 45.689, "out": "$45.69" },
+		{ "in": 0.005, "out": "$0.01" }
+	],
+	"compact": [
+		{ "in": 999, "out": "999" },
+		{ "in": 1000, "out": "1.0K" },
+		{ "in": 2300, "out": "2.3K" },
+		{ "in": 316700000, "out": "316.7M" }
+	],
+	"relTime": [
+		{ "resetAtMs": 120000, "now": 60, "out": "1m" },
+		{ "resetAtMs": 7200000, "now": 0, "out": "2h 0m" },
+		{ "resetAtMs": 136800000, "now": 0, "out": "1d 14h" },
+		{ "resetAtMs": 59000, "now": 0, "out": "<1m" },
+		{ "resetAtMs": 1000, "now": 100, "out": "resetting…" },
+		{ "resetAtMs": null, "now": 0, "out": "unknown" }
+	],
+	"parseIso": [
+		{ "in": "2026-09-27T12:23:00.000Z", "outMs": 1790511780000 },
+		{ "in": "2026-09-27T07:23:00.000-05:00", "outMs": 1790511780000 },
+		{ "in": "2026-09-27T19:53:00.000+07:30", "outMs": 1790511780000 },
+		{ "in": "not-a-date", "outMs": null }
+	],
+	"plan": [
+		{ "id": "individual-goat", "name": "GOAT", "cap": 70.0 },
+		{ "id": "individual-max-20", "name": "Max 20x", "cap": 300.0 },
+		{ "id": "individual-max-10x", "name": "Max 10x", "cap": 150.0 },
+		{ "id": "individual-provider", "name": "Provider", "cap": null },
+		{ "id": "individual-pro", "name": "Pro", "cap": 80.0 },
+		{ "id": "teams-pro", "name": "Team Pro", "cap": 40.0 },
+		{ "id": "bogus", "name": "Free", "cap": null }
+	],
+	"gating": [
+		{ "model": "claude-opus-5", "plan": "individual-goat", "unlocked": false, "allowed": false },
+		{ "model": "claude-opus-5", "plan": "individual-goat", "unlocked": true, "allowed": true },
+		{ "model": "claude-opus-5", "plan": "individual-pro", "unlocked": false, "allowed": false },
+		{ "model": "claude-opus-5", "plan": "individual-max", "unlocked": false, "allowed": true },
+		{ "model": "claude-sonnet-5", "plan": "individual-pro", "unlocked": false, "allowed": true },
+		{ "model": "claude-sonnet-5", "plan": "individual-goat", "unlocked": false, "allowed": false },
+		{ "model": "deepseek/deepseek-v4-pro", "plan": "individual-goat", "unlocked": false, "allowed": true },
+		{ "model": "google/gemini-3.6-flash", "plan": "individual-goat", "unlocked": false, "allowed": false },
+		{ "model": "meta/muse-spark-1.3", "plan": "individual-go", "unlocked": false, "allowed": false },
+		{ "model": "meta/muse-spark-1.3", "plan": "individual-goat", "unlocked": false, "allowed": true },
+		{ "model": "brand-new-model", "plan": "individual-goat", "unlocked": false, "allowed": true },
+		{ "model": "claude-fable-5-1", "plan": "individual-goat", "unlocked": false, "allowed": false },
+		{ "model": "claude-opus-4-7-20251101", "plan": "individual-pro", "unlocked": false, "allowed": false },
+		{ "model": "claude-opus-5", "plan": "", "unlocked": false, "allowed": true }
+	]
+}

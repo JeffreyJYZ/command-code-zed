@@ -1,0 +1,33 @@
+{
+	"nameRules": [
+		{ "needles": ["enterprise"], "name": "Enterprise" },
+		{ "needles": ["provider"], "name": "Provider" },
+		{ "needles": ["team"], "name": "Team Pro" },
+		{ "needles": ["max", "20"], "name": "Max 20x" },
+		{ "needles": ["max"], "name": "Max 10x" },
+		{ "needles": ["goat"], "name": "GOAT" },
+		{ "needles": ["pro"], "name": "Pro" },
+		{ "needles": ["go"], "name": "Go" }
+	],
+	"defaultName": "Free",
+	"caps": {
+		"Enterprise": null,
+		"Provider": null,
+		"Team Pro": 40,
+		"Max 20x": 300,
+		"Max 10x": 150,
+		"GOAT": 70,
+		"Pro": 80,
+		"Go": 10,
+		"Free": null
+	},
+	"plans": [
+		{ "name": "Go", "price": "$1", "monthly": "$10", "fiveHour": "$3", "weekly": "$6" },
+		{ "name": "GOAT", "price": "$10", "monthly": "$70", "fiveHour": "$14", "weekly": "$35" },
+		{ "name": "Pro", "price": "$20", "monthly": "$80", "fiveHour": "$16", "weekly": "$40" },
+		{ "name": "Provider", "price": "$15", "monthly": "PAYG", "fiveHour": "—", "weekly": "—" },
+		{ "name": "Max 10x", "price": "$100", "monthly": "$150", "fiveHour": "$45", "weekly": "$90" },
+		{ "name": "Max 20x", "price": "$200", "monthly": "$300", "fiveHour": "$90", "weekly": "$180" },
+		{ "name": "Team Pro", "price": "$40", "monthly": "$40", "fiveHour": "$12", "weekly": "$24" }
+	]
+}

@@ -1,15 +1,12 @@
-use crate::render::{BOLD, compact, CYAN, DIM, GREEN, money, RED, RESET, YELLOW};
+use crate::render::{color_for, BOLD, compact, CYAN, DIM, money, RESET};
 
-pub fn bar(pct: f64, width: usize, ascii: bool) -> String {
+pub fn bar(pct: f64, width: usize, ascii: bool, colors: bool) -> String {
     let filled = ((pct / 100.0).clamp(0.0, 1.0) * width as f64).round() as usize;
-    let color = if pct >= 90.0 {
-        RED
-    } else if pct >= 70.0 {
-        YELLOW
-    } else {
-        GREEN
-    };
     let (full, empty) = if ascii { ("#", "-") } else { ("━", "╱") };
+    if !colors {
+        return format!("{pct:>5.1}% {}{}", full.repeat(filled), empty.repeat(width - filled));
+    }
+    let color = color_for(pct);
     format!(
         "{color}{pct:>5.1}%{} {}{}{}",
         RESET,
@@ -76,15 +73,11 @@ pub fn render_statusline(tpl: &str, d: &StatusData) -> String {
         }
     }
     out.push_str(rest);
-    if d.colors {
-        out
-    } else {
-        strip_ansi(&out)
-    }
+    out
 }
 
 fn placeholder(key: &str, d: &StatusData) -> String {
-    let bar = |p: f64| bar(p, d.bar_width, d.ascii);
+    let bar = |p: f64| bar(p, d.bar_width, d.ascii, d.colors);
     match key {
         "plan" => d.plan.to_string(),
         "credits" => {
@@ -117,36 +110,27 @@ fn placeholder(key: &str, d: &StatusData) -> String {
     }
 }
 
-pub fn strip_ansi(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            // skip until letter terminating the sequence
-            for c2 in chars.by_ref() {
-                if c2.is_ascii_alphabetic() {
-                    break;
-                }
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
-}
-
 // ---- tables ----
 
-pub fn total_json(t: &crate::reports::Totals) -> String {
-    format!(
-        "{{\"requests\":{},\"tokensIn\":{},\"tokensOut\":{},\"cacheRead\":{},\"cacheWrite\":{},\"costUsd\":{:.4}}}",
-        t.requests,
-        t.usage.input_tokens,
-        t.usage.output_tokens,
-        t.usage.cache_read_tokens,
-        t.usage.cache_write_tokens,
-        t.usage.cost_usd
-    )
+fn totals_json(t: &crate::reports::Totals) -> serde_json::Value {
+    serde_json::json!({
+        "requests": t.requests,
+        "tokensIn": t.usage.input_tokens,
+        "tokensOut": t.usage.output_tokens,
+        "cacheRead": t.usage.cache_read_tokens,
+        "cacheWrite": t.usage.cache_write_tokens,
+        "costUsd": t.usage.cost_usd,
+    })
+}
+
+/// serde_json Map from sorted (key, Totals) pairs — keys are escaped.
+fn totals_map<'a, I>(items: I) -> serde_json::Map<String, serde_json::Value>
+where
+    I: Iterator<Item = (&'a String, &'a crate::reports::Totals)>,
+{
+    items
+        .map(|(k, t)| (k.clone(), totals_json(t)))
+        .collect()
 }
 
 fn table_header() -> String {
@@ -172,15 +156,12 @@ fn table_row(day: &str, t: &crate::reports::Totals, dim: bool) -> String {
 /// Daily usage table (local or account scope). JSON key and heading differ.
 pub fn table(scope: &str, subtitle: &str, by_day: &crate::reports::ByDay, total: &crate::reports::Totals, days: Option<usize>, json: bool) -> String {
     if json {
-        let ds: Vec<String> = by_day
-            .iter()
-            .map(|(d, t)| format!("\"{}\":{}", d, total_json(t)))
-            .collect();
-        return format!(
-            "{{\"scope\":\"{scope}\",\"total\":{},\"days\":{{{}}}}}",
-            total_json(total),
-            ds.join(",")
-        );
+        return serde_json::json!({
+            "scope": scope,
+            "total": totals_json(total),
+            "days": totals_map(by_day.iter()),
+        })
+        .to_string();
     }
     let mut o = format!(
         "{BOLD}{}{RESET} {DIM}({subtitle}){RESET}\n\n",
@@ -199,15 +180,12 @@ pub fn table(scope: &str, subtitle: &str, by_day: &crate::reports::ByDay, total:
 /// Hourly account usage table
 pub fn hourly_table(rows: &[(String, crate::reports::Totals)], json: bool, source: &str) -> String {
     if json {
-        let items: Vec<String> = rows
-            .iter()
-            .map(|(h, t)| format!("\"{}\":{}", h, total_json(t)))
-            .collect();
-        return format!(
-            "{{\"scope\":\"hourly\",\"source\":\"{}\",\"hours\":{{{}}}}}",
-            source.replace(" ", "-"),
-            items.join(",")
-        );
+        return serde_json::json!({
+            "scope": "hourly",
+            "source": source.replace(' ', "-"),
+            "hours": totals_map(rows.iter().map(|(h, t)| (h, t))),
+        })
+        .to_string();
     }
     let mut o = format!(
         "{BOLD}Usage by hour{RESET} {DIM}({source}){RESET}\n\n"
@@ -231,11 +209,7 @@ pub fn hourly_table(rows: &[(String, crate::reports::Totals)], json: bool, sourc
 
 pub fn project_table(by_project: &crate::reports::ByProject, json: bool) -> String {
     if json {
-        let items: Vec<String> = by_project
-            .iter()
-            .map(|(p, t)| format!("\"{}\":{}", p, total_json(t)))
-            .collect();
-        return format!("{{\"projects\":{{{}}}}}", items.join(","));
+        return serde_json::json!({ "projects": totals_map(by_project.iter()) }).to_string();
     }
     let mut o = format!("\n{BOLD}By project{RESET}\n");
     o.push_str(&format!(
@@ -257,11 +231,7 @@ pub fn project_table(by_project: &crate::reports::ByProject, json: bool) -> Stri
 
 pub fn model_table(by_model: &crate::reports::ByModel, json: bool) -> String {
     if json {
-        let items: Vec<String> = by_model
-            .iter()
-            .map(|(m, t)| format!("\"{}\":{}", m, total_json(t)))
-            .collect();
-        return format!("{{\"models\":{{{}}}}}", items.join(","));
+        return serde_json::json!({ "models": totals_map(by_model.iter()) }).to_string();
     }
     let mut o = format!("\n{BOLD}By model{RESET}\n");
     o.push_str(&format!(
@@ -285,4 +255,23 @@ pub fn model_table(by_model: &crate::reports::ByModel, json: bool) -> String {
         ));
     }
     o
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::reports::{ByProject, Totals, Usage};
+
+    #[test]
+    fn project_json_escapes_keys() {
+        let mut by: ByProject = ByProject::new();
+        let t = Totals {
+            requests: 1,
+            usage: Usage { cost_usd: 0.5, ..Default::default() },
+        };
+        by.insert("we\"ird\\name".into(), t);
+        let out = project_table(&by, true);
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["projects"]["we\"ird\\name"]["requests"], 1);
+    }
 }

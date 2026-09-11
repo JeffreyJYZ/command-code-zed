@@ -1,78 +1,10 @@
 use serde::{Deserialize, Serialize};
+use cmduse_core::SubscriptionsResp;
+pub use cmduse_core::{
+    Credits, CreditsResp, SubData, UsageSummary, Window, WindowLimits,
+};
 
 const API_BASE: &str = "https://api.commandcode.ai";
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Credits {
-    pub monthly_credits: f64,
-    #[serde(default)]
-    pub purchased_credits: f64,
-    #[serde(default)]
-    pub free_credits: f64,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Window {
-    pub used: f64,
-    pub cap: f64,
-    #[serde(default)]
-    pub exceeded: bool,
-    #[serde(default)]
-    pub reset_at: Option<f64>,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct WindowLimits {
-    #[serde(default)]
-    pub five_hour: Option<Window>,
-    #[serde(default)]
-    pub weekly: Option<Window>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreditsResp {
-    pub credits: Credits,
-    #[serde(default)]
-    pub window_limits: WindowLimits,
-}
-
-#[derive(Deserialize)]
-struct SubscriptionsResp {
-    #[serde(default)]
-    data: Option<SubData>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SubData {
-    #[serde(default)]
-    pub status: String,
-    #[serde(default)]
-    pub plan_id: String,
-    #[serde(default)]
-    pub current_period_end: Option<String>,
-    #[serde(default)]
-    pub current_period_start: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UsageSummary {
-    #[serde(default)]
-    pub total_count: u64,
-    #[serde(default)]
-    pub total_cost: f64,
-    #[serde(default)]
-    pub success_rate: f64,
-    #[serde(default)]
-    pub total_tokens_in: u64,
-    #[serde(default)]
-    pub total_tokens_out: u64,
-}
 
 pub fn api_key() -> std::io::Result<String> {
     // CMD_API_KEY override: use any account key without touching auth.json
@@ -82,7 +14,7 @@ pub fn api_key() -> std::io::Result<String> {
             return Ok(k);
         }
     }
-    let path = home().join(".commandcode/auth.json");
+    let path = crate::paths::home().join(".commandcode/auth.json");
     let text = std::fs::read_to_string(path)?;
     let v: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -90,10 +22,6 @@ pub fn api_key() -> std::io::Result<String> {
         .as_str()
         .map(|s| s.to_string())
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no apiKey"))
-}
-
-fn home() -> std::path::PathBuf {
-    std::env::var("HOME").unwrap_or_else(|_| "/".into()).into()
 }
 
 fn get(path: &str, key: &str) -> Result<Vec<u8>, String> {
@@ -120,20 +48,12 @@ fn get(path: &str, key: &str) -> Result<Vec<u8>, String> {
             }
             Err(e) => {
                 last_err = format!("{path}: {e}");
-                let err_str = e.to_string().to_lowercase();
-                let is_transient = err_str.contains("tls")
-                    || err_str.contains("connection")
-                    || err_str.contains("timeout")
-                    || err_str.contains("unexpected end of file")
-                    || err_str.contains("connection reset")
-                    || err_str.contains("broken pipe")
-                    || err_str.contains("eof")
-                    || err_str.contains("handshake")
-                    || err_str.contains("certificate")
-                    // HTTP 429 (rate limit) and 5xx (server/upstream blip)
-                    // are retried; 4xx client errors are not.
-                    || err_str.contains("status code 429")
-                    || err_str.contains("status code 5");
+                // Transport = network/TLS/socket blip (always retry); Status =
+                // 429/5xx retry, other 4xx client errors are fatal.
+                let is_transient = match &e {
+                    ureq::Error::Status(code, _) => *code == 429 || (500..600).contains(code),
+                    ureq::Error::Transport(_) => true,
+                };
                 if !is_transient || attempt == MAX_RETRIES {
                     break;
                 }
@@ -142,7 +62,11 @@ fn get(path: &str, key: &str) -> Result<Vec<u8>, String> {
 
         if attempt < MAX_RETRIES {
             let delay = std::cmp::min(BASE_DELAY_MS * (1u64 << attempt), MAX_DELAY_MS);
-            let jitter = fastrand::u64(0..500);
+            // jitter de-syncs retries from other clients; subsec nanos is plenty
+            let jitter = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| u64::from(d.subsec_nanos()) % 500)
+                .unwrap_or(0);
             std::thread::sleep(std::time::Duration::from_millis(delay + jitter));
         }
     }
@@ -154,12 +78,7 @@ use std::io::Read;
 pub fn subscriptions(key: &str) -> Result<SubData, String> {
     let d: SubscriptionsResp = serde_json::from_slice(&get("/alpha/billing/subscriptions", key)?)
         .map_err(|e| format!("subscriptions: {e}"))?;
-    Ok(d.data.unwrap_or(SubData {
-        status: "none".into(),
-        plan_id: "free".into(),
-        current_period_end: None,
-            current_period_start: None,
-    }))
+    Ok(d.data_or_free())
 }
 
 pub fn credits(key: &str) -> Result<CreditsResp, String> {
