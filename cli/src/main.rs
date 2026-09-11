@@ -6,6 +6,7 @@ mod render;
 mod report_render;
 mod reports;
 mod snapshot;
+mod update_check;
 
 #[cfg(test)]
 mod cli_tests;
@@ -140,6 +141,13 @@ fn main() {
             print!("{}", render::render(&s, bar_width));
         }
         return;
+    }
+
+    // Watch mode: check update BEFORE first frame draw. check_sync() blocks
+    // once per day (≤5s); an async eprintln here could land mid-redraw and
+    // tear the in-place frame.
+    if let Some(msg) = update_check::check_sync() {
+        eprintln!("{msg}");
     }
 
     // live mode: true in-place redraw. Frame's last line = status line,

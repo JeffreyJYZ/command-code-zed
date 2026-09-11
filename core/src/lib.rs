@@ -47,10 +47,12 @@ pub fn compact(n: u64) -> String {
     }
 }
 
-/// Percent string of used/cap: "34%" or "—" when cap unknown.
+/// Percent string of used/cap: "34%" or "—" when cap unknown. Rounds
+/// half-away-from-zero (`.round()`), matching JS `Math.round` in the opencode
+/// port; `format!("{:.0}")` alone is half-to-even and drifts at exact .5.
 pub fn pct(used: f64, cap: f64) -> String {
     if cap > 0.0 {
-        format!("{:.0}%", (used / cap) * 100.0)
+        format!("{:.0}%", ((used / cap) * 100.0).round())
     } else {
         "—".into()
     }
@@ -148,7 +150,7 @@ fn strip_date(s: &str) -> String {
 }
 
 /// Exact known id (case-insensitive), else alias target, else date-stripped.
-fn canonical_model(model: &str) -> String {
+pub fn canonical_model(model: &str) -> String {
     let lower = model.to_lowercase();
     if let Some(k) = GATE_KNOWN.iter().find(|m| m.to_lowercase() == lower) {
         return (*k).to_string();
@@ -188,6 +190,14 @@ pub fn gate_allowed(model: &str, plan_id: &str, unlocked: bool) -> bool {
     gate(model, plan_id, unlocked).0
 }
 
+/// Bare model id with any provider qualifier stripped: everything after the
+/// FIRST colon. blockedModels entries are provider-qualified
+/// ("anthropic:claude-opus-5"); we only serve via command-code lanes, so match
+/// on the id portion. A model id that itself contains ':' keeps it.
+pub fn bare_model(blocked: &str) -> &str {
+    blocked.split_once(':').map(|(_, rest)| rest).unwrap_or(blocked)
+}
+
 /// Access decision plus a short human reason (for `models --gated --json`).
 pub fn gate(model: &str, plan_id: &str, unlocked: bool) -> (bool, &'static str) {
     if unlocked {
@@ -211,7 +221,7 @@ pub fn gate(model: &str, plan_id: &str, unlocked: bool) -> (bool, &'static str) 
     };
     if blocked
         .iter()
-        .any(|b| b.rsplit(':').next().unwrap_or(b).to_lowercase() == cl)
+        .any(|b| bare_model(b).to_lowercase() == cl)
     {
         return (false, "blocked for this plan");
     }
@@ -333,6 +343,31 @@ mod tests {
         }
         for c in v["compact"].as_array().unwrap() {
             assert_eq!(compact(c["in"].as_u64().unwrap()), c["out"].as_str().unwrap());
+        }
+        for c in v["pct"].as_array().unwrap() {
+            assert_eq!(
+                pct(c["used"].as_f64().unwrap(), c["cap"].as_f64().unwrap()),
+                c["out"].as_str().unwrap(),
+                "pct {}/{}",
+                c["used"],
+                c["cap"]
+            );
+        }
+        for c in v["bareModel"].as_array().unwrap() {
+            assert_eq!(
+                bare_model(c["in"].as_str().unwrap()),
+                c["out"].as_str().unwrap(),
+                "bareModel {}",
+                c["in"]
+            );
+        }
+        for c in v["canonicalize"].as_array().unwrap() {
+            assert_eq!(
+                canonical_model(c["in"].as_str().unwrap()),
+                c["out"].as_str().unwrap(),
+                "canonicalize {}",
+                c["in"]
+            );
         }
         for c in v["relTime"].as_array().unwrap() {
             let reset = if c["resetAtMs"].is_null() {

@@ -40,3 +40,11 @@ export function canonicalizeModelId(model: string): string {
 	if (aliased) return findKnown(aliased) ?? model;
 	return findKnown(stripDate(model)) ?? model;
 }
+
+/** Bare model id with any provider qualifier stripped: everything after the
+ * FIRST colon ("anthropic:claude-opus-5" → "claude-opus-5"). Matches
+ * cmduse-core's `bare_model`; a model id that itself contains ':' keeps it. */
+export function bareModel(blocked: string): string {
+	const i = blocked.indexOf(":");
+	return i >= 0 ? blocked.slice(i + 1) : blocked;
+}

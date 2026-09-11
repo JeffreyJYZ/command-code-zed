@@ -10,6 +10,28 @@
 		{ "in": 2300, "out": "2.3K" },
 		{ "in": 316700000, "out": "316.7M" }
 	],
+	"pct": [
+		{ "used": 0, "cap": 10, "out": "0%" },
+		{ "used": 5, "cap": 10, "out": "50%" },
+		{ "used": 1, "cap": 8, "out": "13%" },
+		{ "used": 5, "cap": 8, "out": "63%" },
+		{ "used": 1, "cap": 3, "out": "33%" },
+		{ "used": 5, "cap": 0, "out": "—" }
+	],
+	"bareModel": [
+		{ "in": "claude-opus-5", "out": "claude-opus-5" },
+		{ "in": "anthropic:claude-opus-5", "out": "claude-opus-5" },
+		{ "in": "vercel-ai-gateway:meta/muse-spark-1.2", "out": "meta/muse-spark-1.2" },
+		{ "in": "provider:model:sub", "out": "model:sub" }
+	],
+	"canonicalize": [
+		{ "in": "claude-sonnet-5", "out": "claude-sonnet-5" },
+		{ "in": "minimaxai/minimax-m2.5", "out": "MiniMaxAI/MiniMax-M2.5" },
+		{ "in": "claude-opus-4-6", "out": "claude-opus-4-7" },
+		{ "in": "claude-haiku-4-5", "out": "claude-haiku-4-5-20251001" },
+		{ "in": "claude-opus-4-7-20251101", "out": "claude-opus-4-7" },
+		{ "in": "totally-new-model", "out": "totally-new-model" }
+	],
 	"relTime": [
 		{ "resetAtMs": 120000, "now": 60, "out": "1m" },
 		{ "resetAtMs": 7200000, "now": 0, "out": "2h 0m" },

@@ -91,6 +91,21 @@ pub fn iso_hour_start(epoch: u64) -> String {
     format!("{}T{h:02}:00:00.000Z", civil_from_days(days))
 }
 
+/// exact epoch seconds → "YYYY-MM-DDTHH:MM:SS.000Z" (no hour flooring; use for
+/// timezone-local instants that don't land on a UTC hour boundary).
+pub fn iso_instant(epoch: u64) -> String {
+    let secs = epoch as i64;
+    let days = secs.div_euclid(86400);
+    let rem = secs.rem_euclid(86400);
+    format!(
+        "{}T{:02}:{:02}:{:02}.000Z",
+        civil_from_days(days),
+        rem / 3600,
+        (rem % 3600) / 60,
+        rem % 60
+    )
+}
+
 /// shift YYYY-MM-DD by n days (UTC)
 pub fn day_shift(day: &str, n: i64) -> Option<String> {
     let mut p = day.split('-');

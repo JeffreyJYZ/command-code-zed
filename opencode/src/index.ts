@@ -135,10 +135,21 @@ export const CommandCodePlugin: Plugin = async (_input) => {
 
 			let split: Awaited<ReturnType<typeof loadModels>> | undefined;
 			let openKey: string | undefined;
+			// No key at config-hook time is expected for /connect-only users
+			// (the key lives in the auth store, unreadable here) — the
+			// provider.models hook below fills models with auth injected.
 			try {
 				openKey = await resolveKey();
-				split = await loadModels(openKey);
 			} catch {}
+			// But a key we DID resolve followed by a fetch failure is a real
+			// error (bad key / network) worth surfacing, not swallowing.
+			if (openKey) {
+				try {
+					split = await loadModels(openKey);
+				} catch (e) {
+					console.warn("[command-code] model list unavailable:", e);
+				}
+			}
 
 			// ponytail: config-hook models cover old paths; provider.models hook
 			// (below) covers >=1.14.49. User-defined models always win the merge.

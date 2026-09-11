@@ -42,12 +42,13 @@ export async function loadModels(key: string): Promise<ModelSplit> {
 				contextLength: m.context_length ?? 0,
 			}));
 			cache = { at: Date.now(), models };
-		} catch {
+		} catch (e) {
 			if (cache) {
 				models = cache.models;
 			} else {
 				throw new Error(
 					"Could not fetch Command Code model list (https://api.commandcode.ai/provider/v1/models). Check network/API key.",
+					{ cause: e },
 				);
 			}
 		}

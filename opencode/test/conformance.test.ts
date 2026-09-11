@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import conformance from "../../core/conformance.json";
-import { evaluateModelAccess } from "../src/access";
+import { canonicalizeModelId, evaluateModelAccess } from "../src/access";
+import { bareModel } from "../src/gating";
 import {
 	compact,
 	money,
 	parseIsoUtc,
+	pctStr,
 	planMonthlyCap,
 	planName,
 	relTime,
@@ -15,6 +17,9 @@ import {
 
 type MoneyCase = { in: number; out: string };
 type CompactCase = { in: number; out: string };
+type PctCase = { used: number; cap: number; out: string };
+type BareCase = { in: string; out: string };
+type CanonCase = { in: string; out: string };
 type RelCase = { resetAtMs: number | null; now: number; out: string };
 type IsoCase = { in: string; outMs: number | null };
 type PlanCase = { id: string; name: string; cap: number | null };
@@ -28,6 +33,21 @@ describe("conformance vectors (shared with cmduse-core)", () => {
 	test("compact", () => {
 		for (const c of conformance.compact as CompactCase[]) {
 			expect([c.in, compact(c.in)]).toEqual([c.in, c.out]);
+		}
+	});
+	test("pct", () => {
+		for (const c of conformance.pct as PctCase[]) {
+			expect([c.used, c.cap, pctStr(c.used, c.cap)]).toEqual([c.used, c.cap, c.out]);
+		}
+	});
+	test("bareModel", () => {
+		for (const c of conformance.bareModel as BareCase[]) {
+			expect([c.in, bareModel(c.in)]).toEqual([c.in, c.out]);
+		}
+	});
+	test("canonicalize", () => {
+		for (const c of conformance.canonicalize as CanonCase[]) {
+			expect([c.in, canonicalizeModelId(c.in)]).toEqual([c.in, c.out]);
 		}
 	});
 	test("relTime", () => {

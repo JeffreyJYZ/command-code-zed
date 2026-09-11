@@ -38,10 +38,15 @@ fn get(path: &str, key: &str) -> Result<Vec<u8>, String> {
 
         match resp {
             Ok(resp) => {
+                const MAX_BODY: u64 = 10 * 1024 * 1024;
                 let mut buf = Vec::new();
-                match resp.into_reader()
-                    .take(10 * 1024 * 1024)
-                    .read_to_end(&mut buf) {
+                match resp.into_reader().take(MAX_BODY).read_to_end(&mut buf) {
+                    // hitting the cap means the body was truncated and will
+                    // never parse — fail loudly instead of retrying a huge body
+                    Ok(n) if n as u64 == MAX_BODY => {
+                        last_err = format!("{path}: response exceeds {} MiB", MAX_BODY / 1024 / 1024);
+                        break;
+                    }
                     Ok(_) => return Ok(buf),
                     Err(e) => last_err = format!("{path}: read error: {e}"),
                 }

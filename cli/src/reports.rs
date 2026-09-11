@@ -1,5 +1,5 @@
 use crate::api;
-use cmduse_core::dates::{civil_from_days, day_shift, hour_label, iso_hour_start, now_secs, parse_iso_utc, today_utc, tz_offset_suffix};
+use cmduse_core::dates::{civil_from_days, day_shift, hour_label, iso_instant, now_secs, parse_iso_utc, tz_offset_suffix};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 #[derive(Deserialize)]
@@ -167,11 +167,12 @@ fn iso_day_start(day: &str, tz: i64) -> String {
 
 /// Civil "today" in the given fixed offset.
 fn today_in_tz(tz: i64) -> String {
-    if tz == 0 {
-        return today_utc();
-    }
-    let now = now_secs() as i64;
-    civil_from_days((now - tz).div_euclid(86400))
+    date_in_tz(now_secs() as i64, tz)
+}
+
+/// Date at epoch `now` in `tz` seconds east of UTC (local = UTC + tz).
+fn date_in_tz(now: i64, tz: i64) -> String {
+    civil_from_days((now + tz).div_euclid(86400))
 }
 
 /// Fetch cumulative summaries for many `since` boundaries with bounded
@@ -263,24 +264,27 @@ pub fn sum_days(by_day: &ByDay) -> Totals {
 // cum(hour start) - cum(next hour start). Today's in-progress hour =
 // cum(hour start) itself.
 
+/// Bucket boundaries for the last `hours` whole hours: local bucket starts
+/// (for labels) and matching UTC `since` instants (for the API). local = UTC + tz.
+fn hour_bounds(now: u64, hours: usize, tz: i64) -> (Vec<u64>, Vec<u64>) {
+    let local_now = (now as i64 + tz) as u64;
+    let current_hour_local = local_now - local_now % 3600;
+    let local: Vec<u64> = (0..hours)
+        .rev()
+        .map(|i| current_hour_local - (i as u64) * 3600)
+        .collect();
+    let utc: Vec<u64> = local.iter().map(|&b| (b as i64 - tz) as u64).collect();
+    (local, utc)
+}
+
 /// Account-wide usage for the last `hours` hours, one row per hour bucket
 /// (oldest first, current hour last). Includes all harnesses.
 pub fn load_account_hourly(hours: usize, key: &str, tz: i64) -> Result<Vec<(String, Totals)>, String> {
     let hours = hours.max(1);
-    let now = now_secs();
-    // bucket boundaries in the requested offset: shift to local, floor to the
-    // hour, then shift back to UTC to form the `since` instant. Labels use the
-    // local hour.
-    let local_now = (now as i64 - tz) as u64;
-    let current_hour_local = local_now - local_now % 3600;
-    let bounds_local: Vec<u64> = (0..hours)
-        .rev()
-        .map(|i| current_hour_local - (i as u64) * 3600)
-        .collect();
-    let bounds_utc: Vec<u64> = bounds_local.iter().map(|b| (*b as i64 + tz) as u64).collect();
+    let (bounds_local, bounds_utc) = hour_bounds(now_secs(), hours, tz);
 
     // bounded 8-way pool (shared fetch_pool); cums[i] aligns with bounds[i]
-    let sinces: Vec<String> = bounds_utc.iter().map(|&b| iso_hour_start(b)).collect();
+    let sinces: Vec<String> = bounds_utc.iter().map(|&b| iso_instant(b)).collect();
     let cums = fetch_pool(&sinces, key)?;
 
     // cum[i] = usage from bounds[i] → now. per-hour i = cum[i] - cum[i+1];
@@ -361,4 +365,29 @@ pub fn load_local_hourly(hours: usize) -> Vec<(String, Totals)> {
             (hour_label(h), by_hour.get(&h).copied().unwrap_or_default())
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn date_in_tz_sign_is_east_positive() {
+        // 2026-09-27T20:00:00Z
+        let now = 1_790_539_200i64;
+        assert_eq!(date_in_tz(now, 0), "2026-09-27");
+        assert_eq!(date_in_tz(now, 19_800), "2026-09-28"); // +05:30
+        assert_eq!(date_in_tz(now, -28_800), "2026-09-27"); // -08:00 → noon
+        assert_eq!(date_in_tz(now, 28_800), "2026-09-28"); // +08:00 → 04:00
+    }
+
+    #[test]
+    fn hour_bounds_align_utc_since_to_local_hour() {
+        // 2026-09-27T20:00:00Z with +05:30 → local 01:30 on 09-28.
+        let (local, utc) = hour_bounds(1_790_539_200, 2, 19_800);
+        assert_eq!(local, vec![1_790_553_600, 1_790_557_200]);
+        assert_eq!(utc, vec![1_790_533_800, 1_790_537_400]);
+        // minute-bearing offset must land on :30 UTC, not be hour-floored
+        assert_eq!(iso_instant(utc[1]), "2026-09-27T19:30:00.000Z");
+    }
 }

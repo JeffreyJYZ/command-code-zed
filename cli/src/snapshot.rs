@@ -1,6 +1,6 @@
 use crate::api;
-use crate::render::Snapshot;
-use std::io::{IsTerminal, Write};
+use crate::render::{CYAN, RESET, Snapshot};
+use std::io::Write;
 
 pub fn snapshot() -> Snapshot {
     let mut s = empty_snapshot();
@@ -13,13 +13,29 @@ pub fn snapshot() -> Snapshot {
         }
     };
 
-    // one-line feedback while the (retrying) fetches run, so a slow network
-    // doesn't look hung before the first/next frame. tty only, cleared below.
-    let tty = std::io::stderr().is_terminal();
-    if tty {
-        eprint!("\r\x1b[2Kfetching usage…");
-        std::io::stderr().flush().ok();
-    }
+    // animated spinner while the (retrying) fetches run, so a slow network
+    // doesn't look hung. Written to /dev/tty directly: in watch mode the main
+    // thread holds the stdout lock during redraw, and stderr may be redirected.
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop2 = stop.clone();
+    let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let writer = std::thread::spawn(move || {
+        let mut tty = std::fs::OpenOptions::new().write(true).open("/dev/tty").ok();
+        let mut i = 0;
+        while !stop2.load(std::sync::atomic::Ordering::Relaxed) {
+            if let Some(f) = tty.as_mut() {
+                write!(
+                    f,
+                    "\r\x1b[2K{CYAN}fetching usage… {}{RESET}",
+                    frames[i % frames.len()]
+                )
+                .ok();
+                f.flush().ok();
+            }
+            i += 1;
+            std::thread::sleep(std::time::Duration::from_millis(80));
+        }
+    });
 
     // three endpoints in parallel — slowest one sets the latency
     let (r_sub, r_credits, r_summary) = {
@@ -34,9 +50,13 @@ pub fn snapshot() -> Snapshot {
             t3.join().unwrap_or_else(|_| Err("summary thread panicked".into())),
         )
     };
-    if tty {
-        eprint!("\r\x1b[2K");
-        std::io::stderr().flush().ok();
+
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    let _ = writer.join();
+    if let Ok(mut f) = std::fs::OpenOptions::new().write(true).open("/dev/tty") {
+        // erase spinner line; main redraws status line right after
+        write!(f, "\r\x1b[2K").ok();
+        f.flush().ok();
     }
 
     let mut errs: Vec<String> = Vec::new();

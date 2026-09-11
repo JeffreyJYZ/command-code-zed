@@ -1,4 +1,4 @@
-import { type Category, canonicalizeModelId, HARD_BLOCKED, MODEL_CATEGORIES, PLAN_RULES } from "./gating";
+import { bareModel, type Category, canonicalizeModelId, HARD_BLOCKED, MODEL_CATEGORIES, PLAN_RULES } from "./gating";
 
 export { canonicalizeModelId, PLAN_RULES };
 
@@ -29,10 +29,9 @@ export function evaluateModelAccess(model: string, plan: PlanLike): { allowed: b
 	if (!category) return { allowed: true };
 	// blockedModels are provider-qualified ("anthropic:claude-opus-5"); we only serve
 	// via command-code lanes, so match on the bare model id portion.
-	const blocked = rules.blockedModels.some((b) => {
-		const bare = b.includes(":") ? b.slice(b.indexOf(":") + 1) : b;
-		return bare.toLowerCase() === canonical.toLowerCase();
-	});
+	const blocked = rules.blockedModels.some(
+		(b) => bareModel(b).toLowerCase() === canonical.toLowerCase(),
+	);
 	if (blocked) return { allowed: false };
 	if (!rules.allowedCategories.includes(category)) return { allowed: false };
 	return { allowed: true };

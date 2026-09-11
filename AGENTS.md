@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Workspace: cmduse-core + cmd-usage CLI + Zed extension + opencode plugin,
-single source of shared logic. Release line 0.6.1 (0.2–0.4 slots are
+single source of shared logic. Release line 0.6.2 (0.2–0.4 slots are
 yanked-forever on crates.io from the old crate).
 
 ## Layout
@@ -15,10 +15,11 @@ core/              cmduse-core: shared pure logic, single source of truth
   build.rs         reads plans.json + gating.json → generated NAME_RULES/CAPS/
                    PLANS/GATE_* consts
   src/lib.rs       plan_name, plan_monthly_cap, money, compact, pct, rel_time,
-                   elapsed_pct, pace_eta (10% gate lives here), gate/gate_allowed
-                   (access decision + reason, mirrors opencode/src/access.ts)
+                   elapsed_pct, pace_eta (10% gate lives here), gate/gate_allowed,
+                   bare_model + canonical_model (provider/alias normalization,
+                   mirror opencode/src/{access,gating}.ts)
   src/dates.rs     ISO/UTC date helpers (parse_iso_utc, civil_from_days,
-                   now_secs, …)
+                   iso_hour_start, iso_instant, now_secs, …)
   src/wire.rs      API wire DTOs shared by CLI + Zed (Credits/Window/SubData/…)
 cli/               cmd-usage (bin `cmduse`), published to crates.io
   src/…            thin UI: api client, snapshot, ANSI rendering, reports, redraw
@@ -43,7 +44,8 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (no core crate;
   `hardBlocked` entries live in that script.
 - **Behavior vectors live in `core/conformance.json`.** Rust (`core` test) and
   TS (`opencode/test/conformance.test.ts`) both run it, so the two language
-  ports of money/compact/rel_time/parse_iso_utc/plan_*/gating can't drift.
+  ports of money/compact/pct/rel_time/parse_iso_utc/plan_*/gating/bare_model/
+  canonicalize can't drift.
 - `core` keeps adapters out: cli wraps `rel_time`/`elapsed_pct` to its
   `u64`-now signatures; zed-ext uses core's `Option<u64>` forms directly.
 - Window caps (5-hour/weekly) come from the API `Window.cap` response, NOT
@@ -63,11 +65,11 @@ cd opencode && bun test && bun run typecheck
 ## Publishing (NEVER without explicit user go)
 
 - Order matters: `cmduse-core` first, then `cmd-usage`. `cli/Cargo.toml` dep
-  is `{ path = "../core", version = "0.6.1" }` — path resolves locally, the
+  is `{ path = "../core", version = "0.6.2" }` — path resolves locally, the
   `version` must already exist on crates.io for `cmd-usage` publish to work.
 - **crates.io version slots are FOREVER.** 0.2.0–0.4.0 were published+yanked
   on old `cmd-usage` — you can never re-upload those numbers. Current 0.x
-  release line is 0.6.1 (first free slot past the dead 0.2–0.4 range). Skip
+  release line is 0.6.2 (first free slot past the dead 0.2–0.4 range). Skip
   taken numbers, never fight the 400.
 - Clean tree required (commit first, incl. Cargo.lock). Zed ext has NO
   release channel (local dev-install only).
@@ -76,7 +78,7 @@ cd opencode && bun test && bun run typecheck
   (`curl -sL https://static.crates.io/crates/cmd-usage/cmd-usage-<v>.crate | shasum -a 256`).
 - README/AGENTS updated in the same commit.
 - The opencode npm package (`opencode/package.json`) is versioned
-  **independently** of the Rust workspace (0.1.2 vs 0.6.1) — intentional, not
+  **independently** of the Rust workspace (0.1.3 vs 0.6.2) — intentional, not
   drift. Don't sync them.
 
 ## Learned-the-hard-way
@@ -86,3 +88,8 @@ API endpoints, cumulative-diff reports, TLS retry, watch-mode redraw rules
 `\x1b[2K\x1b[1B` + `\x1b[2K` + `\x1b[{prev-n}F`; test redraw bytes via
 cli/src/main_tests.rs). Zed wasm: crate builds for `wasm32-wasip1`;
 `extension.wasm` regenerated on dev-install.
+`--tz` offsets are **east-positive seconds** (`parse_tz("+05:30")=+19800`),
+matching `tz_offset_suffix`; local = UTC + tz. All day/hour bucketing must use
+that sign — a flipped `now - tz` silently shifts every local bucket (fixed in
+0.6.2). Route exact local hour boundaries through `dates::iso_instant`, not
+`iso_hour_start` (the latter floors to a UTC hour and breaks minute offsets).
