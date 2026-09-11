@@ -56,7 +56,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "cmd-usage"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "cmduse-core",
  "serde",
@@ -66,7 +66,7 @@ dependencies = [
 
 [[package]]
 name = "cmduse-core"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -74,7 +74,7 @@ dependencies = [
 
 [[package]]
 name = "command-code-usage"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "cmduse-core",
  "serde_json",

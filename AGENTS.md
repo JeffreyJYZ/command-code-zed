@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Workspace: cmduse-core + cmd-usage CLI + Zed extension + opencode plugin,
-single source of shared logic. Release line 0.6.0 (0.2–0.4 slots are
+single source of shared logic. Release line 0.6.1 (0.2–0.4 slots are
 yanked-forever on crates.io from the old crate).
 
 ## Layout
@@ -63,11 +63,11 @@ cd opencode && bun test && bun run typecheck
 ## Publishing (NEVER without explicit user go)
 
 - Order matters: `cmduse-core` first, then `cmd-usage`. `cli/Cargo.toml` dep
-  is `{ path = "../core", version = "0.6.0" }` — path resolves locally, the
+  is `{ path = "../core", version = "0.6.1" }` — path resolves locally, the
   `version` must already exist on crates.io for `cmd-usage` publish to work.
 - **crates.io version slots are FOREVER.** 0.2.0–0.4.0 were published+yanked
   on old `cmd-usage` — you can never re-upload those numbers. Current 0.x
-  release line is 0.6.0 (first free slot past the dead 0.2–0.4 range). Skip
+  release line is 0.6.1 (first free slot past the dead 0.2–0.4 range). Skip
   taken numbers, never fight the 400.
 - Clean tree required (commit first, incl. Cargo.lock). Zed ext has NO
   release channel (local dev-install only).
@@ -76,7 +76,7 @@ cd opencode && bun test && bun run typecheck
   (`curl -sL https://static.crates.io/crates/cmd-usage/cmd-usage-<v>.crate | shasum -a 256`).
 - README/AGENTS updated in the same commit.
 - The opencode npm package (`opencode/package.json`) is versioned
-  **independently** of the Rust workspace (0.1.1 vs 0.6.0) — intentional, not
+  **independently** of the Rust workspace (0.1.2 vs 0.6.1) — intentional, not
   drift. Don't sync them.
 
 ## Learned-the-hard-way
