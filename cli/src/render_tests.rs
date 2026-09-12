@@ -356,3 +356,25 @@ fn sparkline_shapes() {
     // all zeros → all low bars, no NaN panic
     assert_eq!(sparkline(&[0.0, 0.0]), "▁▁");
 }
+
+#[test]
+fn update_box_borders_align_and_wraps() {
+    let b = crate::render::update_box("update available 0.6.7 → 0.6.8", None, false);
+    let lines: Vec<&str> = b.lines().collect();
+    assert_eq!(lines.len(), 3);
+    let w = lines[0].chars().count();
+    assert!(lines.iter().all(|l| l.chars().count() == w), "{b}");
+    assert!(b.contains("update available"), "{b}");
+    assert!(b.starts_with('╭') && b.trim_end().ends_with('╯'), "{b}");
+
+    // narrow terminal wraps the body inside the box
+    let narrow = crate::render::update_box("aaa bbb ccc ddd eee fff", Some(16), false);
+    assert!(narrow.lines().count() > 3, "{narrow}");
+    let nw = narrow.lines().next().unwrap().chars().count();
+    assert!(narrow.lines().all(|l| l.chars().count() == nw), "{narrow}");
+
+    // ANSI colouring keeps the same number of lines/borders
+    let colored = crate::render::update_box("update available", None, true);
+    assert_eq!(colored.lines().count(), 3, "{colored}");
+    assert!(colored.contains("\x1b[33m") && colored.contains("update available"));
+}

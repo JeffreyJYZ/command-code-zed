@@ -22,7 +22,7 @@ mod main_tests;
 
 use std::io::Write;
 
-use crate::render::{BOLD, DIM, RESET, YELLOW};
+use crate::render::{BOLD, DIM, RESET};
 
 fn main() {
     let args = cli::parse_args();
@@ -35,6 +35,24 @@ fn main() {
         if let Err(e) = config::set(&cs) {
             eprintln!("error: {e}");
             std::process::exit(1);
+        }
+        return;
+    }
+
+    if args.dismiss_update {
+        match update_check::latest_newer() {
+            Ok(Some(v)) => match config::set_dismissed(&v) {
+                Ok(()) => println!("dismissed update notice for {v}"),
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
+            },
+            Ok(None) => println!("cmduse is up to date ({})", env!("CARGO_PKG_VERSION")),
+            Err(e) => {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
         }
         return;
     }
@@ -176,7 +194,7 @@ fn main() {
     // redrawn frame (an eprintln sits outside the in-place UI and scrolls
     // away); one-shot has no frame, so it goes to stderr. Report subcommands
     // returned earlier, so this only covers the dashboard.
-    let update = update_check::check_sync();
+    let update = update_check::check_sync(cfg.check_updates, cfg.dismissed_update.as_deref());
 
     if args.once {
         if let Some(msg) = &update {
@@ -207,14 +225,6 @@ fn main() {
     // One-shot guards ANSI with color_enabled(); the watch path must too, or a
     // pipe (e.g. `cmduse | tee`) leaks SGR. Reuse the same decision.
     let use_color = render::color_enabled();
-    // Update notice rides inside the frame so it survives every redraw.
-    let update_line = update.as_ref().map(|m| {
-        if use_color && !args.plain {
-            format!("{YELLOW}{m}{RESET}\n")
-        } else {
-            format!("{m}\n")
-        }
-    });
     // deltas ($ per refresh) feed the spend-burst sparkline. Session-only:
     // no disk persistence — a fresh run shows a fresh trend, never old data.
     let mut history: Vec<f64> = Vec::new();
@@ -293,8 +303,11 @@ fn main() {
         } else {
             String::new() // idle (all-zero deltas) → no row, no flat-line noise
         };
+        let update_box = update
+            .as_ref()
+            .map(|m| render::update_box(m, (cols > 0).then_some(cols), use_color && !args.plain));
         let status_line = format!("{DIM}refreshing every {interval}s · ctrl-c to quit{RESET}");
-        let frame = match &update_line {
+        let frame = match &update_box {
             Some(u) => format!("{u}{text}{spark}{status_line}"),
             None => format!("{text}{spark}{status_line}"),
         };

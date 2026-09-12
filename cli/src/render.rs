@@ -383,3 +383,65 @@ pub fn sparkline(history: &[f64]) -> String {
         })
         .collect()
 }
+
+/// Char-safe greedy word wrap; overlong words are hard-split. `w` is the
+/// inner content width in characters.
+fn wrap_chars(s: &str, w: usize) -> Vec<String> {
+    if w == 0 {
+        return vec![s.to_string()];
+    }
+    let mut out: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut cur_len = 0usize;
+    for word in s.split(' ') {
+        let mut word = word;
+        if cur_len > 0 && cur_len + 1 + word.chars().count() > w {
+            out.push(std::mem::take(&mut cur));
+            cur_len = 0;
+        }
+        while word.chars().count() > w {
+            let split = word
+                .char_indices()
+                .nth(w)
+                .map(|(i, _)| i)
+                .unwrap_or(word.len());
+            let (head, tail) = word.split_at(split);
+            if cur_len > 0 {
+                out.push(std::mem::take(&mut cur));
+                cur_len = 0;
+            }
+            out.push(head.to_string());
+            word = tail;
+        }
+        if cur_len > 0 {
+            cur.push(' ');
+            cur_len += 1;
+        }
+        cur.push_str(word);
+        cur_len += word.chars().count();
+    }
+    if cur_len > 0 {
+        out.push(cur);
+    }
+    if out.is_empty() {
+        out.push(String::new());
+    }
+    out
+}
+
+/// Boxed update notice for the watch frame. Wraps to the terminal width and
+/// colours the whole box yellow when `colors`.
+pub fn update_box(msg: &str, cols: Option<usize>, colors: bool) -> String {
+    let msg_len = msg.chars().count();
+    let max_inner = cols.map_or(msg_len, |c| c.saturating_sub(4).max(8));
+    let inner = msg_len.min(max_inner).max(8);
+    let bar = "─".repeat(inner + 2);
+    let (hl, rst) = if colors { (YELLOW, RESET) } else { ("", "") };
+    let mut out = format!("{hl}╭{bar}╮{rst}\n");
+    for chunk in wrap_chars(msg, inner) {
+        let body = format!("{chunk:<inner$}");
+        out.push_str(&format!("{hl}│ {body} │{rst}\n"));
+    }
+    out.push_str(&format!("{hl}╰{bar}╯{rst}\n"));
+    out
+}

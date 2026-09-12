@@ -127,11 +127,26 @@ status() { cmduse statusline 2>/dev/null; }
   "notify_on_cap": true,
   "statusline_template": "{plan} {credits}/{cap} · 5h {5h_bar} · wk {wk_bar}",
   "statusline_colors": true,
-  "statusline_ascii": false
+  "statusline_ascii": false,
+  "check_updates": true,
+  "dismissed_update": null
 }
 ```
 
-CLI flags override config. `cmduse config set interval=<s> width=<n> burst_on=<bool> burst=<n> notify=<bool> sl=<tpl> sl_colors=<bool> sl_ascii=<bool>`.
+CLI flags override config. `cmduse config set interval=<s> width=<n> burst_on=<bool> burst=<n> notify=<bool> sl=<tpl> sl_colors=<bool> sl_ascii=<bool> update_check=<bool> dismissed_update=<ver>`.
+
+## Updates
+
+Once per day (cache at `~/.cache/cmd-usage/last-check`) the dashboard checks
+crates.io; when a newer `cmd-usage` exists it shows a boxed notice inside the
+watch frame (stderr for `-1`). The cached version is replayed every run, so the
+reminder persists until you upgrade. Dismiss or disable:
+
+```sh
+cmduse --dismiss-update              # hide this version until a newer one
+cmduse config set update_check=false # never check
+cmduse config set dismissed_update=0.6.8
+```
 
 ## Data sources
 

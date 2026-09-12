@@ -12,6 +12,9 @@ pub struct Config {
     pub statusline_template: String,
     pub statusline_colors: bool,
     pub statusline_ascii: bool,
+    pub check_updates: bool,
+    /// Version whose update notice the user dismissed (resumes on the next one).
+    pub dismissed_update: Option<String>,
 }
 
 impl Default for Config {
@@ -26,6 +29,8 @@ impl Default for Config {
                 .into(),
             statusline_colors: true,
             statusline_ascii: false,
+            check_updates: true,
+            dismissed_update: None,
         }
     }
 }
@@ -58,6 +63,8 @@ pub fn set(cs: &crate::cli::ConfigSet) -> Result<(), String> {
         cs.burst_on.is_some(),
         cs.bursts.is_some(),
         cs.notify.is_some(),
+        cs.update_check.is_some(),
+        cs.dismissed_update.is_some(),
     ]
     .iter()
     .all(|set| !set)
@@ -90,15 +97,11 @@ pub fn set(cs: &crate::cli::ConfigSet) -> Result<(), String> {
         statusline_template: cs.sl_template.clone().unwrap_or(cur.statusline_template),
         statusline_colors: cs.sl_colors.unwrap_or(cur.statusline_colors),
         statusline_ascii: cs.sl_ascii.unwrap_or(cur.statusline_ascii),
+        check_updates: cs.update_check.unwrap_or(cur.check_updates),
+        dismissed_update: cs.dismissed_update.clone().or(cur.dismissed_update),
     };
-    let json = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
-
-    let path = config_path();
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(&path, json + "\n").map_err(|e| e.to_string())?;
-    println!("saved {}", path.display());
+    save(&cfg)?;
+    println!("saved {}", config_path().display());
     println!("  interval_secs       = {}", cfg.interval_secs);
     println!("  bar_width           = {}", cfg.bar_width);
     println!("  burst_enabled       = {}", cfg.burst_enabled);
@@ -107,5 +110,28 @@ pub fn set(cs: &crate::cli::ConfigSet) -> Result<(), String> {
     println!("  statusline_template = {}", cfg.statusline_template);
     println!("  statusline_colors   = {}", cfg.statusline_colors);
     println!("  statusline_ascii    = {}", cfg.statusline_ascii);
+    println!("  check_updates       = {}", cfg.check_updates);
+    println!(
+        "  dismissed_update    = {}",
+        cfg.dismissed_update.as_deref().unwrap_or("(none)")
+    );
     Ok(())
+}
+
+/// Persist `cfg` to disk (pretty JSON + trailing newline).
+fn save(cfg: &Config) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(cfg).map_err(|e| e.to_string())?;
+    let path = config_path();
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&path, json + "\n").map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Record `version` as dismissed (used by `cmduse --dismiss-update`).
+pub fn set_dismissed(version: &str) -> Result<(), String> {
+    let mut cfg = load();
+    cfg.dismissed_update = Some(version.to_string());
+    save(&cfg)
 }

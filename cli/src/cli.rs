@@ -17,6 +17,7 @@ pub struct Args {
     pub local: bool,
     pub gated: bool,
     pub tz: Option<i64>,
+    pub dismiss_update: bool,
 }
 
 #[derive(Debug, Default)]
@@ -29,6 +30,8 @@ pub struct ConfigSet {
     pub bursts: Option<usize>,
     pub burst_on: Option<bool>,
     pub notify: Option<bool>,
+    pub update_check: Option<bool>,
+    pub dismissed_update: Option<String>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -80,6 +83,7 @@ pub(crate) fn parse_args_from(
             Long("csv") => a.csv = true,
             Long("local") => a.local = true,
             Long("gated") => a.gated = true,
+            Long("dismiss-update") => a.dismiss_update = true,
             Long("tz") => {
                 let v = need_value(&mut parser, "--tz needs an offset like +05:30 or -08:00")?;
                 match parse_tz(&v) {
@@ -223,9 +227,18 @@ fn parse_config_set(parser: &mut lexopt::Parser) -> Result<ConfigSet, String> {
             }
             "burst_on" | "burst-on" => cs.burst_on = Some(parse_bool(v, "burst_on")?),
             "notify" | "notify_on_cap" => cs.notify = Some(parse_bool(v, "notify")?),
+            "update" | "update_check" | "check_updates" => {
+                cs.update_check = Some(parse_bool(v, "update_check")?)
+            }
+            "dismiss" | "dismissed_update" => {
+                if v.is_empty() || v.contains(char::is_whitespace) {
+                    return Err("dismissed_update must be a version like 0.6.8".into());
+                }
+                cs.dismissed_update = Some(v.to_string())
+            }
             other => {
                 return Err(format!(
-                    "config: unknown key '{other}' (keys: interval, width, sl, sl_colors, sl_ascii, burst, burst_on, notify)"
+                    "config: unknown key '{other}' (keys: interval, width, sl, sl_colors, sl_ascii, burst, burst_on, notify, update_check, dismissed_update)"
                 ))
             }
         }
@@ -295,6 +308,8 @@ Options:
       --json            Machine-readable JSON output where supported
       --csv             CSV output for daily/hourly/model/session
       --gated           models: filter to what the current plan allows
+      --dismiss-update  Ack the current update notice (hides it until a newer
+                        version; same as config set dismissed_update=<ver>)
       --tz <±HH:MM>     daily/hourly: bucket by this UTC offset instead of UTC
                         (applies to local logs too)
       --days <n>        daily: number of days back (default 7, max 365)
@@ -307,7 +322,8 @@ Options:
 Config: ~/.config/cmd-usage/config.json
   { \"interval_secs\": 5, \"bar_width\": 20, \"burst_enabled\": true,
     \"burst_samples\": 40, \"notify_on_cap\": true, \"statusline_template\": \"…\",
-    \"statusline_colors\": true, \"statusline_ascii\": false }
+    \"statusline_colors\": true, \"statusline_ascii\": false,
+    \"check_updates\": true, \"dismissed_update\": null }
 
 daily/model/session read ~/.commandcode/projects offline (no API calls).
 Dashboard needs: logged-in Command Code CLI (~/.commandcode/auth.json)"

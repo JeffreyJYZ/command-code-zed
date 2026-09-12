@@ -1,4 +1,4 @@
-.TH CMDUSE 1 "2026-09" "cmd-usage 0.6.7" "User Commands"
+.TH CMDUSE 1 "2026-09" "cmd-usage 0.6.8" "User Commands"
 .SH NAME
 cmduse \- live Command Code (commandcode.ai) usage dashboard and reporter
 .SH SYNOPSIS
@@ -218,6 +218,12 @@ one model.  With \fB\-\-json\fR it does not filter: every model is emitted
 with additional \fBallowed\fR (bool) and \fBreason\fR (string) fields.  If the
 bundled gating snapshot is older than 30 days a warning is printed to stderr.
 .TP
+.B \-\-dismiss\-update
+Acknowledge the current update notice: records the newest crates.io version
+(same as
+.BR "config set dismissed_update=<ver>" )
+and exits.  The notice stays hidden until an even newer version appears.
+.TP
 .B \-W, \-\-watch
 Force watch mode (the default).  Conflicts with
 .BR \-1 ;
@@ -431,6 +437,10 @@ Read; API key.  Written by the Command Code CLI.
 Read; per\-project CLI usage logs used by \fBdaily\fR/\fBhourly\fR
 \fB\-\-local\fR, \fBmodel\fR, \fBsession\fR.  JSON lines.
 .TP
+.I ~/.cache/cmd\-usage/last\-check
+Written; JSON recording the last update\-check time and newest known version.
+Deleting it forces a fresh check on the next run.
+.TP
 .I ~/.config/cmd\-usage/config.json
 Config, or
 .I $XDG_CONFIG_HOME/cmd\-usage/config.json
@@ -462,6 +472,14 @@ boolean, default true.
 .TP
 statusline_ascii
 boolean, default false.
+.TP
+check_updates
+boolean, default true.  When false, never contact crates.io to check for a
+newer \fBcmd\-usage\fR.
+.TP
+dismissed_update
+version string or null.  Suppresses the update notice for exactly this
+version; a newer release shows again.
 .RE
 Unknown keys are preserved on config set (the file is rewritten from the
 merged struct, so unknown keys are actually dropped on the next

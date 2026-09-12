@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Workspace: cmduse-core + cmd-usage CLI + Zed extension + opencode plugin,
-single source of shared logic. Release line 0.6.7 (0.2–0.4 slots are
+single source of shared logic. Release line 0.6.8 (0.2–0.4 slots are
 yanked-forever on crates.io from the old crate).
 
 ## Layout
@@ -83,7 +83,7 @@ cd opencode && bun test && bun run typecheck
   `version` must already exist on crates.io for `cmd-usage` publish to work.
 - **crates.io version slots are FOREVER.** 0.2.0–0.4.0 were published+yanked
   on old `cmd-usage` — you can never re-upload those numbers. Current 0.x
-  release line is 0.6.7 (first free slot past the dead 0.2–0.4 range). Skip
+  release line is 0.6.8 (first free slot past the dead 0.2–0.4 range). Skip
   taken numbers, never fight the 400.
 - Clean tree required (commit first, incl. Cargo.lock). Zed ext has NO
   release channel (local dev-install only).
@@ -134,3 +134,9 @@ space server-side and silently corrupts the timestamp (fixed 0.6.7).
 *before* canonicalizing the incoming model, so a provider-qualified input
 (`anthropic:claude-opus-5`) can't miss the category table and bypass
 `hardBlocked`.
+
+The update notice is drawn **inside** the watch frame (`render::update_box`),
+never via mid-frame `eprintln`; `-1` sends it to stderr. The crates.io check is
+cached 24h (`~/.cache/cmd-usage/last-check`, JSON `{checkedAt, latest}`) and the
+cached version replays every run until upgraded. Gate it with
+`check_updates=false` or `--dismiss-update` / `dismissed_update=<ver>`.

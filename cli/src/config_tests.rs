@@ -25,6 +25,8 @@ fn config_defaults_when_missing() {
     assert_eq!(d.bar_width, 20);
     assert!(d.burst_enabled, "spend-bursts default ON");
     assert_eq!(d.burst_samples, 40);
+    assert!(d.check_updates, "update check default ON");
+    assert!(d.dismissed_update.is_none());
 }
 
 #[test]
@@ -82,6 +84,23 @@ fn config_set_validates_and_persists() {
     let c: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     assert!(!c.burst_enabled);
     assert!(!c.notify_on_cap);
+
+    // update toggle + dismissed version persist
+    set(&ConfigSet {
+        update_check: Some(false),
+        dismissed_update: Some("0.6.8".into()),
+        ..Default::default()
+    })
+    .unwrap();
+    let c: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert!(!c.check_updates);
+    assert_eq!(c.dismissed_update.as_deref(), Some("0.6.8"));
+
+    // set_dismissed keeps unrelated settings
+    super::config::set_dismissed("9.9.9").unwrap();
+    let c: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(c.dismissed_update.as_deref(), Some("9.9.9"));
+    assert!(!c.check_updates);
 
     // validation errors
     assert!(set(&cs(Some(0), None)).is_err());

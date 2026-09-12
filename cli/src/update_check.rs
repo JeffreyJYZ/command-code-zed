@@ -7,19 +7,16 @@ const MAX_AGE_SECS: u64 = 86_400;
 fn cache_path() -> PathBuf {
     crate::paths::home().join(".cache/cmd-usage/last-check")
 }
-
-/// Check crates.io for a newer cmd-usage, hitting the network at most once per
-/// 24h. The cached latest version is replayed on every run, so an available
-/// update keeps showing until you upgrade (not just once a day). Synchronous
-/// and best-effort: returns a warning message or None.
-pub fn check_sync() -> Option<String> {
+/// Latest version known from a fresh cache, else fetched from crates.io (and
+/// cached for 24h). None on network/parse failure.
+fn latest_version() -> Option<String> {
     let now = cmduse_core::dates::now_secs();
     // Fresh cache: no network, just replay the last known version.
     if let Ok(text) = std::fs::read_to_string(cache_path()) {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
             if let (Some(checked), Some(latest)) = (v["checkedAt"].as_u64(), v["latest"].as_str()) {
                 if now.saturating_sub(checked) < MAX_AGE_SECS {
-                    return update_msg(latest);
+                    return Some(latest.to_string());
                 }
             }
         }
@@ -45,7 +42,30 @@ pub fn check_sync() -> Option<String> {
     // fail the JSON parse above and are replaced here.
     let entry = serde_json::json!({ "checkedAt": now, "latest": latest });
     let _ = std::fs::write(cache_path(), entry.to_string());
-    update_msg(latest)
+    Some(latest.to_string())
+}
+
+/// Warning line when checking is enabled and the latest version is neither the
+/// one the user dismissed nor the running version.
+pub fn check_sync(enabled: bool, dismissed: Option<&str>) -> Option<String> {
+    if !enabled {
+        return None;
+    }
+    let latest = latest_version()?;
+    if Some(latest.as_str()) == dismissed {
+        return None;
+    }
+    update_msg(&latest)
+}
+
+/// Newer-than-CURRENT version for `--dismiss-update`; `Ok(None)` when up to
+/// date, `Err` when crates.io couldn't be reached.
+pub fn latest_newer() -> Result<Option<String>, String> {
+    match latest_version() {
+        Some(v) if newer(&v, CURRENT) => Ok(Some(v)),
+        Some(_) => Ok(None),
+        None => Err("could not check crates.io for the latest version".into()),
+    }
 }
 
 /// Plain "update available" line when `latest` beats CURRENT; the caller
@@ -55,7 +75,7 @@ fn update_msg(latest: &str) -> Option<String> {
         return None;
     }
     Some(format!(
-        "cmduse: update available {CURRENT} → {latest} (cargo install cmd-usage / brew upgrade jeffreyjyz/tap/cmduse)"
+        "update available {CURRENT} → {latest} (cargo install cmd-usage / brew upgrade jeffreyjyz/tap/cmduse)"
     ))
 }
 
@@ -89,6 +109,11 @@ mod tests {
         assert!(!newer("0.6.6-beta.1", "0.6.6"));
         assert!(!newer("0.6.5+build.2", "0.6.5"));
         assert!(newer("0.6.6-beta.1", "0.6.5"));
+    }
+
+    #[test]
+    fn disabled_check_skips_network() {
+        assert!(check_sync(false, None).is_none());
     }
 
     #[test]
