@@ -182,6 +182,11 @@ export const CommandCodePlugin: Plugin = async (_input) => {
 			// open lane: opencode only injects stored auth for providers with
 			// their own /connect entry; share the key via options.apiKey
 			// resolved at startup (resolves against auth store + CLI auth.json).
+			// ponytail: the plugin API allows one auth hook + one provider hook,
+			// both bound to a single provider id, so a /connect-only user with no
+			// ~/.commandcode/auth.json gets no open-lane models/key here. Fixing
+			// that needs a second plugin entry (or an upstream multi-provider
+			// hook); until then the open lane requires cmd login or options.apiKey.
 			const userOpenai = existing("command-code-openai");
 			cfg.provider["command-code-openai"] = {
 				npm: userOpenai.options ? undefined : "@ai-sdk/openai-compatible",

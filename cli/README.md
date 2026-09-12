@@ -43,6 +43,7 @@ cmduse daily --days 14       # account usage by day (all harnesses, from usage A
                              # --days max 365, fetched 8-at-a-time
 cmduse daily --local         # CLI-logs-only (offline, misses other harnesses)
 cmduse daily --tz +05:30     # bucket by a fixed UTC offset instead of UTC
+cmduse daily --local --tz +05:30  # ...the local-log path honors --tz too
 cmduse hourly --hours 6      # account usage by hour (default 24, max 168)
 cmduse hourly --local        # hourly from local CLI logs (offline)
 cmduse model                 # local usage by model
@@ -53,7 +54,12 @@ cmduse models --gated --json # every model annotated with allowed + reason
 cmduse plans                 # plan comparison table (marks your plan)
 cmduse statusline            # compact one-liner for prompts/tmux
 cmduse daily --json          # JSON output (daily, hourly, model, session, models, statusline, plans, -1)
+cmduse daily --csv           # CSV output for daily/hourly/model/session
 ```
+
+Color: SGR escapes are suppressed when stdout is not a terminal or when
+`NO_COLOR` is set non-empty. `--plain` forces plain text; reports have no
+`--plain` — pipe them or use `--json`/`--csv`.
 
 `-1 --json` emits a single dashboard object (plan, credits, both windows,
 billing summary). `--gated --json` on `models` emits every model with
@@ -139,5 +145,6 @@ Logged-in [Command Code CLI](https://commandcode.ai) — reads your API key from
 ## Notes
 
 - Window bars: green <70%, yellow 70–90%, red ≥90%, plus `LIMIT EXCEEDED` flag.
+- Report tables show cache read and cache write separately; `daily` is bucketed in UTC unless `--tz`, and `--local` honors `--tz`; token totals in the model/session `Tokens` column include both cache columns.
 - Spend-burst sparkline appears in watch mode after 2 refreshes (bars = $ spent between refreshes, ~3 min of history at 5s interval, capped at 40 samples; tall = burst, flat = idle).
 - On Monthly caps: monthly pool is the plan total (e.g. $70 on GOAT). Docs describe per-model allowances, but the CLI and API meter one shared pool — verified empirically.

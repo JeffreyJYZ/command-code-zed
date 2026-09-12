@@ -45,6 +45,10 @@ fn parses_flags_all_forms() {
     let a = parse_args_from(argv(&["daily", "--days", "3"])).unwrap();
     assert_eq!(a.subcmd, Some(SubCmd::Daily));
     assert_eq!(a.last, Some(3));
+    let a = parse_args_from(argv(&["model", "--csv"])).unwrap();
+    assert!(a.csv);
+    assert!(!a.json);
+    assert!(parse_args_from(argv(&["--json", "--csv"])).is_err());
 }
 
 #[test]
@@ -72,6 +76,8 @@ fn parse_flags() {
     assert!(u.contains("--interval"));
     assert!(u.contains("--bar-width"));
     assert!(u.contains("--plain"));
+    assert!(u.contains("--csv"));
+    assert!(u.contains("NO_COLOR"));
     assert!(u.contains("config set"));
     assert!(u.contains("config.json"));
 }

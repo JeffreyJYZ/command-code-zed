@@ -78,9 +78,13 @@ pub struct LocalData {
     pub total: Totals,
 }
 
-/// day key = UTC YYYY-MM-DD from ISO timestamp
-fn day_of(ts: &str) -> Option<String> {
-    ts.get(0..10).map(|s| s.to_string())
+/// Day key (YYYY-MM-DD) for an ISO timestamp in `tz` seconds east of UTC.
+/// Falls back to the raw UTC date slice when the timestamp doesn't parse.
+fn day_of(ts: &str, tz: i64) -> Option<String> {
+    match parse_iso_utc(ts) {
+        Some(ms) => Some(date_in_tz((ms / 1000.0) as i64, tz)),
+        None => ts.get(0..10).map(|s| s.to_string()),
+    }
 }
 
 /// (project dir name, file contents) for every session JSONL under
@@ -109,7 +113,7 @@ fn session_files() -> Vec<(String, String)> {
     out
 }
 
-pub fn load_local() -> LocalData {
+pub fn load_local(tz: i64) -> LocalData {
     let mut data = LocalData {
         by_day: ByDay::new(),
         by_model: ByModel::new(),
@@ -136,7 +140,7 @@ pub fn load_local() -> LocalData {
                         continue;
                     }
                     let bucket = |t: &mut Totals| t.add(&u);
-                    if let Some(day) = day_of(&l.timestamp) {
+                    if let Some(day) = day_of(&l.timestamp, tz) {
                         bucket(data.by_day.entry(day).or_default());
                     }
                     if let Some(m) = &l.model {
@@ -349,20 +353,26 @@ pub fn load_account_hourly(
     Ok(out)
 }
 
+/// Start of the local hour containing `epoch`, `tz` seconds east of UTC.
+fn local_hour_start(epoch: u64, tz: i64) -> u64 {
+    let local = (epoch as i64 + tz) as u64;
+    local - local % 3600
+}
+
 /// Local hourly buckets from JSONL logs (offline, CLI sessions only).
-/// Returns (label, totals) oldest-first for the last `hours` hours, UTC.
-pub fn load_local_hourly(hours: usize) -> Vec<(String, Totals)> {
+/// Returns (label, totals) oldest-first for the last `hours` hours, bucketed in
+/// `tz` (seconds east of UTC; 0 = UTC).
+pub fn load_local_hourly(hours: usize, tz: i64) -> Vec<(String, Totals)> {
     let hours = hours.max(1);
     let now = now_secs();
-    let current_hour = now - now % 3600;
+    let current_hour = local_hour_start(now, tz);
     let oldest = current_hour - (hours as u64 - 1) * 3600;
 
-    // timestamp ISO → hour bucket index
+    // timestamp ISO → local hour bucket index
     let bucket_of = |ts: &str| -> Option<u64> {
         let ms: f64 = parse_iso_utc(ts)?;
-        let s = (ms / 1000.0) as u64;
-        let h = s - s % 3600;
-        (h >= oldest).then_some(h)
+        let h = local_hour_start((ms / 1000.0) as u64, tz);
+        (h >= oldest && h <= current_hour).then_some(h)
     };
 
     let mut by_hour: BTreeMap<u64, Totals> = BTreeMap::new();
@@ -404,6 +414,22 @@ mod tests {
         assert_eq!(date_in_tz(now, 19_800), "2026-09-28"); // +05:30
         assert_eq!(date_in_tz(now, -28_800), "2026-09-27"); // -08:00 → noon
         assert_eq!(date_in_tz(now, 28_800), "2026-09-28"); // +08:00 → 04:00
+    }
+
+    #[test]
+    fn local_day_of_honors_tz() {
+        let ts = "2026-09-27T20:00:00.000Z";
+        assert_eq!(day_of(ts, 0).as_deref(), Some("2026-09-27"));
+        assert_eq!(day_of(ts, 19_800).as_deref(), Some("2026-09-28")); // +05:30
+        assert_eq!(day_of("garbage", 0), None);
+    }
+
+    #[test]
+    fn local_hour_start_honors_tz() {
+        // 20:00Z with +05:30 → 01:30 local on the next day → hour start 01:00.
+        let e = 1_790_539_200u64;
+        assert_eq!(local_hour_start(e, 0), 1_790_539_200);
+        assert_eq!(local_hour_start(e, 19_800), 1_790_557_200);
     }
 
     #[test]

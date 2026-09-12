@@ -13,6 +13,7 @@ pub struct Args {
     pub last: Option<usize>,
     pub hours: Option<usize>,
     pub json: bool,
+    pub csv: bool,
     pub local: bool,
     pub gated: bool,
     pub tz: Option<i64>,
@@ -76,6 +77,7 @@ pub(crate) fn parse_args_from(
                 std::process::exit(0);
             }
             Long("json") => a.json = true,
+            Long("csv") => a.csv = true,
             Long("local") => a.local = true,
             Long("gated") => a.gated = true,
             Long("tz") => {
@@ -160,6 +162,9 @@ pub(crate) fn parse_args_from(
     }
     if saw_once && saw_watch {
         return Err("cannot combine -1/--once with -W/--watch".into());
+    }
+    if a.json && a.csv {
+        return Err("cannot combine --json with --csv".into());
     }
     Ok(a)
 }
@@ -288,13 +293,16 @@ Options:
   -b, --bursts <n>      Spend-burst sparkline samples (default: 40; hide when
                         idle via config burst_on=false)
       --json            Machine-readable JSON output where supported
+      --csv             CSV output for daily/hourly/model/session
       --gated           models: filter to what the current plan allows
       --tz <±HH:MM>     daily/hourly: bucket by this UTC offset instead of UTC
+                        (applies to local logs too)
       --days <n>        daily: number of days back (default 7, max 365)
       --hours <n>       hourly: number of hours back (default 24, max 168)
       --local           daily: use local CLI logs only (skip account API)
   -V, --version         Print version
   -h, --help            This help
+  Respects NO_COLOR; colors auto-off when stdout is not a terminal.
 
 Config: ~/.config/cmd-usage/config.json
   { \"interval_secs\": 5, \"bar_width\": 20, \"burst_enabled\": true,

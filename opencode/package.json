@@ -1,6 +1,6 @@
 {
 	"name": "@jeffreyjyz/opencode-command-code",
-	"version": "0.1.6",
+	"version": "0.1.7",
 	"description": "Command Code provider + usage dashboard for opencode: two providers (Anthropic wire for Claude, OpenAI wire for everything else) against api.commandcode.ai, live model list, plan gating, /cmd-usage.",
 	"type": "module",
 	"main": "dist/index.js",

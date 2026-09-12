@@ -1,4 +1,4 @@
-.TH CMDUSE 1 "2026-09" "cmd-usage 0.6.5" "User Commands"
+.TH CMDUSE 1 "2026-09" "cmd-usage 0.6.6" "User Commands"
 .SH NAME
 cmduse \- live Command Code (commandcode.ai) usage dashboard and reporter
 .SH SYNOPSIS
@@ -9,16 +9,16 @@ cmduse \- live Command Code (commandcode.ai) usage dashboard and reporter
 [\fIOPTIONS\fR]
 .br
 .B cmduse daily
-[\fB\-\-days\fR \fIn\fR] [\fB\-\-json\fR] [\fB\-\-local\fR]
+[\fB\-\-days\fR \fIn\fR] [\fB\-\-json\fR] [\fB\-\-csv\fR] [\fB\-\-local\fR]
 .br
 .B cmduse hourly
-[\fB\-\-hours\fR \fIn\fR] [\fB\-\-json\fR] [\fB\-\-local\fR]
+[\fB\-\-hours\fR \fIn\fR] [\fB\-\-json\fR] [\fB\-\-csv\fR] [\fB\-\-local\fR]
 .br
 .B cmduse model
-[\fB\-\-json\fR]
+[\fB\-\-json\fR] [\fB\-\-csv\fR]
 .br
 .B cmduse session
-[\fB\-\-json\fR]
+[\fB\-\-json\fR] [\fB\-\-csv\fR]
 .br
 .B cmduse models
 [\fB\-\-json\fR] [\fB\-\-gated\fR]
@@ -72,25 +72,32 @@ cumulative summary at each UTC midnight and differencing adjacent
 boundaries; requests are pooled 8 at a time in parallel.  With
 \fB\-\-local\fR it instead reads only this machine's CLI sessions from
 .IR ~/.commandcode/projects
-(offline, no API key required, misses other harnesses).  \fB\-\-json\fR
-emits one JSON object per day on its own line, then a totals object on a
-line with key "total".
+(offline, no API key required, misses other harnesses).  Days are bucketed
+in UTC unless \fB\-\-tz\fR is given, which applies to both the API and the
+local path.  \fB\-\-json\fR emits one object
+\fI{"scope","total","days"}\fR where \fIdays\fR maps each date to its totals.
+\fB\-\-csv\fR emits
+\fIday,requests,tokens_in,tokens_out,cache_read,cache_write,cost_usd\fR
+with a final \fItotal\fR row.
 .TP
 .B hourly
-Same cumulative\-differencing method as \fBdaily\fR but over UTC hour
-boundaries for the last \fI\-\-hours\fR N hours (default 24, max 168).
-\fB\-\-local\fR reads CLI\-log hour buckets offline.  \fB\-\-json\fR emits
-rows then a totals line.
+Same cumulative\-differencing method as \fBdaily\fR but over hour
+boundaries (UTC unless \fB\-\-tz\fR) for the last \fI\-\-hours\fR N hours
+(default 24, max 168).  \fB\-\-local\fR reads CLI\-log hour buckets offline
+and honors \fB\-\-tz\fR.  \fB\-\-json\fR emits one object
+\fI{"scope","source","hours"}\fR; \fB\-\-csv\fR emits
+\fIhour,requests,tokens_in,tokens_out,cost_usd\fR.
 .TP
 .B model
 Local usage grouped by model, read from
 .IR ~/.commandcode/projects
-(offline; the usage API exposes no per\-model split).  \fB\-\-json\fR
-supported.
+(offline; the usage API exposes no per\-model split).  \fB\-\-json\fR and
+\fB\-\-csv\fR supported; the \fITokens\fR column sums input, output, cache
+read, and cache write.
 .TP
 .B session
 Local usage grouped by project/session directory, same offline file.
-\fB\-\-json\fR supported.
+\fB\-\-json\fR and \fB\-\-csv\fR supported.
 .TP
 .B models
 Live model list from the provider endpoint
@@ -166,6 +173,8 @@ fiveHour, weekly, summary, error) instead of the text dashboard.
 .B \-p, \-\-plain
 No ANSI colors and no live redraw (used with \fB\-1\fR for scripts/pipes).
 In watch mode it keeps the plain text render but still redraws in place.
+Colors are also dropped automatically on a non\-terminal stdout or when
+\fBNO_COLOR\fR is set.
 .TP
 .B \-i, \-\-interval \fIdur\fR
 Refresh interval (1\(en86400 seconds).  Accepts a unit suffix:
@@ -181,7 +190,8 @@ implies it on regardless of config.
 .TP
 .B \-\-tz \fI\(+-HH:MM\fR
 .BR daily " / " hourly :
-bucket by this fixed UTC offset instead of UTC.  Accepts
+bucket by this fixed UTC offset instead of UTC.  Applies to the account API
+path and the \fB\-\-local\fR log path alike.  Accepts
 .I +05:30 ", " -08:00 ", " +0530 ", " -8 .
 .TP
 .B \-\-days, \-\-last, \-l \fIn\fR
@@ -191,7 +201,12 @@ bucket by this fixed UTC offset instead of UTC.  Accepts
 .BR hourly : number of hours back (1\(en168).
 .TP
 .B \-\-json
-Machine\-readable output where the subcommand supports it.
+Machine\-readable output where the subcommand supports it.  Conflicts with
+\fB\-\-csv\fR (supplying both exits 2).
+.TP
+.B \-\-csv
+CSV output for \fBdaily\fR, \fBhourly\fR, \fBmodel\fR, and \fBsession\fR.
+Fields containing a comma, quote, or newline are quoted per RFC 4180.
 .TP
 .B \-\-gated
 .BR models :
@@ -461,6 +476,11 @@ Base for the config file when set.
 .B HOME
 Base for auth, projects, config (fallback), and cache paths when
 XDG_CONFIG_HOME is unset.
+.TP
+.B NO_COLOR
+When set to a non\-empty value, ANSI colors are suppressed (no\-color.org).
+Colors are also suppressed automatically when stdout is not a terminal, so
+piping a report or `cmduse \-1` never leaks SGR escapes.
 .SH EXAMPLES
 .nf
 cmduse                     # live dashboard, 5s refresh
@@ -485,8 +505,9 @@ Never add a trailing newline after the frame's last line and never write a
 bare newline at the very bottom row of the window; both desync the in\-place
 redraw in real terminals.
 .IP \(bu
-Account dailies and hourlies are UTC; a session near a midnight boundary
-splits across two day rows.
+Account and local dailies/hourlies bucket in UTC by default; pass
+\fB\-\-tz\fR to bucket by a fixed offset.  Without it, a session near a UTC
+midnight boundary splits across two day rows.
 .IP \(bu
 If the API returns a plan id not in the local plan table, the dashboard labels
 it "Free" with no monthly cap and prints a one\-time warning to stderr; update

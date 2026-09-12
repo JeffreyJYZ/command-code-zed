@@ -17,9 +17,12 @@ export function money(v: number): string {
 	return `$${v.toFixed(2)}`;
 }
 
+/** Mirrors cmduse_core::compact. `toFixed` alone disagreed with Rust's `{:.1}`
+ * at `.x5` ties; round half-away-from-zero explicitly so both ports match. */
 export function compact(n: number): string {
-	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+	const round1 = (v: number) => Math.round(v * 10) / 10;
+	if (n >= 1_000_000) return `${round1(n / 1_000_000).toFixed(1)}M`;
+	if (n >= 1_000) return `${round1(n / 1_000).toFixed(1)}K`;
 	return `${n}`;
 }
 

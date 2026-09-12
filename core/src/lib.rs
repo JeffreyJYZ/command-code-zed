@@ -76,11 +76,15 @@ pub fn monthly_window(
     )
 }
 
+/// Compact thousands/millions. Rounds half-away-from-zero explicitly before
+/// formatting: `{:.1}` alone is round-half-to-even, which disagrees with JS
+/// `Math.round` at exact `.x5` ties (1_250_000 → "1.2M" vs "1.3M").
 pub fn compact(n: u64) -> String {
+    let round1 = |v: f64| (v * 10.0).round() / 10.0;
     if n >= 1_000_000 {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
+        format!("{:.1}M", round1(n as f64 / 1_000_000.0))
     } else if n >= 1_000 {
-        format!("{:.1}K", n as f64 / 1_000.0)
+        format!("{:.1}K", round1(n as f64 / 1_000.0))
     } else {
         format!("{n}")
     }
@@ -328,6 +332,8 @@ mod tests {
         assert_eq!(money(45.689), "$45.69");
         assert_eq!(compact(999), "999");
         assert_eq!(compact(2_300), "2.3K");
+        assert_eq!(compact(1_250), "1.3K"); // half-away, not half-even
+        assert_eq!(compact(1_250_000), "1.3M");
         assert_eq!(compact(316_700_000), "316.7M");
     }
 

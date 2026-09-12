@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Workspace: cmduse-core + cmd-usage CLI + Zed extension + opencode plugin,
-single source of shared logic. Release line 0.6.5 (0.2–0.4 slots are
+single source of shared logic. Release line 0.6.6 (0.2–0.4 slots are
 yanked-forever on crates.io from the old crate).
 
 ## Layout
@@ -79,11 +79,11 @@ cd opencode && bun test && bun run typecheck
 ## Publishing (NEVER without explicit user go)
 
 - Order matters: `cmduse-core` first, then `cmd-usage`. `cli/Cargo.toml` dep
-  is `{ path = "../core", version = "0.6.5" }` — path resolves locally, the
+  is `{ path = "../core", version = "0.6.6" }` — path resolves locally, the
   `version` must already exist on crates.io for `cmd-usage` publish to work.
 - **crates.io version slots are FOREVER.** 0.2.0–0.4.0 were published+yanked
   on old `cmd-usage` — you can never re-upload those numbers. Current 0.x
-  release line is 0.6.5 (first free slot past the dead 0.2–0.4 range). Skip
+  release line is 0.6.6 (first free slot past the dead 0.2–0.4 range). Skip
   taken numbers, never fight the 400.
 - Clean tree required (commit first, incl. Cargo.lock). Zed ext has NO
   release channel (local dev-install only).
@@ -92,7 +92,7 @@ cd opencode && bun test && bun run typecheck
   (`curl -sL https://static.crates.io/crates/cmd-usage/cmd-usage-<v>.crate | shasum -a 256`).
 - README/AGENTS updated in the same commit.
 - The opencode npm package (`opencode/package.json`) is versioned
-  **independently** of the Rust workspace (0.1.x vs 0.6.5) — intentional, not
+  **independently** of the Rust workspace (0.1.x vs 0.6.x) — intentional, not
   drift. Don't sync them.
 
 ## Learned-the-hard-way
@@ -105,7 +105,9 @@ cli/src/main_tests.rs). Zed wasm: crate builds for `wasm32-wasip1`;
 `--tz` offsets are **east-positive seconds** (`parse_tz("+05:30")=+19800`),
 matching `tz_offset_suffix`; local = UTC + tz. All day/hour bucketing must use
 that sign — a flipped `now - tz` silently shifts every local bucket (fixed in
-0.6.2). Route exact local hour boundaries through `dates::iso_instant` — do NOT
+0.6.2). `--tz` reaches the `--local` log path too (daily + hourly), not just
+the account API. Report output goes through `render::color_enabled()`
+(NO_COLOR + stdout tty); never emit raw SGR when piped. Route exact local hour boundaries through `dates::iso_instant` — do NOT
 floor to a UTC hour, that breaks minute-bearing offsets like +05:30.
 `pace_eta` returns **seconds** (a duration); format it with `core::duration`,
 never `rel_time` — the latter expects an absolute reset epoch and renders any

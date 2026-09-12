@@ -33,7 +33,11 @@ pub fn check_sync() -> Option<String> {
         .call()
         .ok()?;
     let json = resp.into_json::<serde_json::Value>().ok()?;
-    let latest = json["crate"]["max_version"].as_str()?;
+    // Prefer max_stable_version: max_version includes pre-releases, which must
+    // not prompt an "update available" for a stable release.
+    let latest = json["crate"]["max_stable_version"]
+        .as_str()
+        .or_else(|| json["crate"]["max_version"].as_str())?;
     if newer(latest, CURRENT) {
         Some(format!(
             "\x1b[33mcmduse: update available {CURRENT} → {latest} (cargo install cmd-usage / brew upgrade jeffreyjyz/tap/cmduse)\x1b[0m"
@@ -44,9 +48,14 @@ pub fn check_sync() -> Option<String> {
 }
 
 /// True when dotted-numeric `latest` > `current` (missing parts count as 0).
+/// Build/pre-release suffixes (`-beta.1`, `+build`) are ignored, so a
+/// pre-release never wins against a release with the same numeric core.
 fn newer(latest: &str, current: &str) -> bool {
     let parse = |v: &str| -> Vec<u64> {
-        v.split('.')
+        v.split(['-', '+'])
+            .next()
+            .unwrap_or(v)
+            .split('.')
             .map(|p| p.trim().parse().unwrap_or(0))
             .collect()
     };
@@ -64,5 +73,9 @@ mod tests {
         assert!(newer("0.6.2", "0.6.1"));
         assert!(!newer("0.1.9", "0.1.10"));
         assert!(!newer("0.1.9", "0.1.9"));
+        // pre-release of the same numeric core is not newer than the release
+        assert!(!newer("0.6.6-beta.1", "0.6.6"));
+        assert!(!newer("0.6.5+build.2", "0.6.5"));
+        assert!(newer("0.6.6-beta.1", "0.6.5"));
     }
 }

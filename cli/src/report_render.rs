@@ -1,5 +1,32 @@
 use crate::render::{color_for, compact, money, BOLD, CYAN, DIM, RESET};
 
+/// Output format for the report tables. JSON and CSV are machine-readable
+/// (never colored); `Table` honors the caller's color decision.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Fmt {
+    Table,
+    Json,
+    Csv,
+}
+
+/// RFC 4180 field: quote when it holds a comma, quote, or newline.
+fn csv_field(s: &str) -> String {
+    if s.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
+/// All token columns incl. cache read + write — the displayed "Tokens" total
+/// must not silently drop cache-write spend.
+fn tokens(t: &crate::reports::Totals) -> u64 {
+    t.usage.input_tokens
+        + t.usage.output_tokens
+        + t.usage.cache_read_tokens
+        + t.usage.cache_write_tokens
+}
+
 pub fn bar(pct: f64, width: usize, ascii: bool, colors: bool) -> String {
     let filled = ((pct / 100.0).clamp(0.0, 1.0) * width as f64).round() as usize;
     let (full, empty) = if ascii { ("#", "-") } else { ("━", "╱") };
@@ -135,22 +162,24 @@ where
     items.map(|(k, t)| (k.clone(), totals_json(t))).collect()
 }
 
-fn table_header() -> String {
+fn table_header(colors: bool) -> String {
+    let (b, r) = if colors { (BOLD, RESET) } else { ("", "") };
     format!(
-        " {BOLD}{:<12}{RESET} {:>6} {:>10} {:>10} {:>10} {:>10}\n",
-        "Day", "Reqs", "In", "Out", "Cache rd", "Cost"
+        " {b}{:<12}{r} {:>6} {:>10} {:>10} {:>10} {:>10} {:>10}\n",
+        "Day", "Reqs", "In", "Out", "Cache rd", "Cache wr", "Cost"
     )
 }
 
 fn table_row(day: &str, t: &crate::reports::Totals, dim: bool) -> String {
     let (d_open, d_close): (&str, &str) = if dim { (DIM, RESET) } else { ("", "") };
     format!(
-        " {d_open}{:<12}{d_close} {:>6} {:>10} {:>10} {:>10} {:>10}\n",
+        " {d_open}{:<12}{d_close} {:>6} {:>10} {:>10} {:>10} {:>10} {:>10}\n",
         day,
         compact(t.requests),
         compact(t.usage.input_tokens),
         compact(t.usage.output_tokens),
         compact(t.usage.cache_read_tokens),
+        compact(t.usage.cache_write_tokens),
         money(t.usage.cost_usd),
     )
 }
@@ -162,113 +191,195 @@ pub fn table(
     by_day: &crate::reports::ByDay,
     total: &crate::reports::Totals,
     days: Option<usize>,
-    json: bool,
+    fmt: Fmt,
+    colors: bool,
 ) -> String {
-    if json {
-        return serde_json::json!({
+    match fmt {
+        Fmt::Json => serde_json::json!({
             "scope": scope,
             "total": totals_json(total),
             "days": totals_map(by_day.iter()),
         })
-        .to_string();
-    }
-    let mut o = format!(
-        "{BOLD}{}{RESET} {DIM}({subtitle}){RESET}\n\n",
-        if scope == "account" {
-            "Account usage"
-        } else {
-            "Local usage"
+        .to_string(),
+        Fmt::Csv => {
+            let mut o =
+                String::from("day,requests,tokens_in,tokens_out,cache_read,cache_write,cost_usd\n");
+            for (day, t) in by_day {
+                o.push_str(&format!(
+                    "{},{},{},{},{},{},{:.2}\n",
+                    csv_field(day),
+                    t.requests,
+                    t.usage.input_tokens,
+                    t.usage.output_tokens,
+                    t.usage.cache_read_tokens,
+                    t.usage.cache_write_tokens,
+                    t.usage.cost_usd,
+                ));
+            }
+            o.push_str(&format!(
+                "total,{},{},{},{},{},{:.2}\n",
+                total.requests,
+                total.usage.input_tokens,
+                total.usage.output_tokens,
+                total.usage.cache_read_tokens,
+                total.usage.cache_write_tokens,
+                total.usage.cost_usd,
+            ));
+            o
         }
-    );
-    o.push_str(&table_header());
-    let day_count = by_day.len();
-    let last_n = days.unwrap_or(usize::MAX);
-    for (day, t) in by_day.iter().skip(day_count.saturating_sub(last_n)) {
-        o.push_str(&table_row(day, t, false));
+        Fmt::Table => {
+            let (b, r) = if colors { (BOLD, RESET) } else { ("", "") };
+            let (d, dr) = if colors { (DIM, RESET) } else { ("", "") };
+            let mut o = format!(
+                "{b}{}{r} {d}({subtitle}){dr}\n\n",
+                if scope == "account" {
+                    "Account usage"
+                } else {
+                    "Local usage"
+                }
+            );
+            o.push_str(&table_header(colors));
+            let day_count = by_day.len();
+            let last_n = days.unwrap_or(usize::MAX);
+            for (day, t) in by_day.iter().skip(day_count.saturating_sub(last_n)) {
+                o.push_str(&table_row(day, t, false));
+            }
+            o.push_str(&table_row("total", total, colors));
+            o
+        }
     }
-    o.push_str(&table_row("total", total, true));
-    o
 }
 
 /// Hourly account usage table
-pub fn hourly_table(rows: &[(String, crate::reports::Totals)], json: bool, source: &str) -> String {
-    if json {
-        return serde_json::json!({
+pub fn hourly_table(
+    rows: &[(String, crate::reports::Totals)],
+    fmt: Fmt,
+    source: &str,
+    colors: bool,
+) -> String {
+    match fmt {
+        Fmt::Json => serde_json::json!({
             "scope": "hourly",
             "source": source.replace(' ', "-"),
             "hours": totals_map(rows.iter().map(|(h, t)| (h, t))),
         })
-        .to_string();
+        .to_string(),
+        Fmt::Csv => {
+            let mut o = String::from("hour,requests,tokens_in,tokens_out,cost_usd\n");
+            for (h, t) in rows {
+                o.push_str(&format!(
+                    "{},{},{},{},{:.2}\n",
+                    csv_field(h),
+                    t.requests,
+                    t.usage.input_tokens,
+                    t.usage.output_tokens,
+                    t.usage.cost_usd,
+                ));
+            }
+            o
+        }
+        Fmt::Table => {
+            let (b, r) = if colors { (BOLD, RESET) } else { ("", "") };
+            let (d, dr) = if colors { (DIM, RESET) } else { ("", "") };
+            let mut o = format!("{b}Usage by hour{r} {d}({source}){dr}\n\n");
+            o.push_str(&format!(
+                " {b}{:<14}{r} {:>6} {:>10} {:>10} {:>10}\n",
+                "Hour", "Reqs", "In", "Out", "Cost"
+            ));
+            for (h, t) in rows {
+                o.push_str(&format!(
+                    " {:<14} {:>6} {:>10} {:>10} {:>10}\n",
+                    h,
+                    compact(t.requests),
+                    compact(t.usage.input_tokens),
+                    compact(t.usage.output_tokens),
+                    money(t.usage.cost_usd),
+                ));
+            }
+            o
+        }
     }
-    let mut o = format!("{BOLD}Usage by hour{RESET} {DIM}({source}){RESET}\n\n");
-    o.push_str(&format!(
-        " {BOLD}{:<14}{RESET} {:>6} {:>10} {:>10} {:>10}\n",
-        "Hour", "Reqs", "In", "Out", "Cost"
-    ));
-    for (h, t) in rows {
-        o.push_str(&format!(
-            " {:<14} {:>6} {:>10} {:>10} {:>10}\n",
-            h,
-            compact(t.requests),
-            compact(t.usage.input_tokens),
-            compact(t.usage.output_tokens),
-            money(t.usage.cost_usd),
-        ));
-    }
-    o
 }
 
-pub fn project_table(by_project: &crate::reports::ByProject, json: bool) -> String {
-    if json {
-        return serde_json::json!({ "projects": totals_map(by_project.iter()) }).to_string();
+pub fn project_table(by_project: &crate::reports::ByProject, fmt: Fmt, colors: bool) -> String {
+    match fmt {
+        Fmt::Json => serde_json::json!({ "projects": totals_map(by_project.iter()) }).to_string(),
+        Fmt::Csv => {
+            let mut o = String::from("project,requests,tokens,cost_usd\n");
+            for (p, t) in by_project {
+                o.push_str(&format!(
+                    "{},{},{},{:.2}\n",
+                    csv_field(p),
+                    t.requests,
+                    tokens(t),
+                    t.usage.cost_usd,
+                ));
+            }
+            o
+        }
+        Fmt::Table => {
+            let (b, r) = if colors { (BOLD, RESET) } else { ("", "") };
+            let mut o = format!("\n{b}By project{r}\n");
+            o.push_str(&format!(
+                " {b}{:<32}{r} {:>6} {:>10} {:>10}\n",
+                "Project", "Reqs", "Tokens", "Cost"
+            ));
+            for (p, t) in by_project {
+                o.push_str(&format!(
+                    " {:<32} {:>6} {:>10} {:>10}\n",
+                    p,
+                    compact(t.requests),
+                    compact(tokens(t)),
+                    money(t.usage.cost_usd),
+                ));
+            }
+            o
+        }
     }
-    let mut o = format!("\n{BOLD}By project{RESET}\n");
-    o.push_str(&format!(
-        " {BOLD}{:<32}{RESET} {:>6} {:>10} {:>10}\n",
-        "Project", "Reqs", "Tokens", "Cost"
-    ));
-    for (p, t) in by_project {
-        let tokens = t.usage.input_tokens + t.usage.output_tokens + t.usage.cache_read_tokens;
-        o.push_str(&format!(
-            " {:<32} {:>6} {:>10} {:>10}\n",
-            p,
-            compact(t.requests),
-            compact(tokens),
-            money(t.usage.cost_usd),
-        ));
-    }
-    o
 }
 
-pub fn model_table(by_model: &crate::reports::ByModel, json: bool) -> String {
-    if json {
-        return serde_json::json!({ "models": totals_map(by_model.iter()) }).to_string();
+pub fn model_table(by_model: &crate::reports::ByModel, fmt: Fmt, colors: bool) -> String {
+    match fmt {
+        Fmt::Json => serde_json::json!({ "models": totals_map(by_model.iter()) }).to_string(),
+        Fmt::Csv => {
+            let mut o = String::from("model,requests,tokens,cost_usd\n");
+            for (m, t) in by_model {
+                o.push_str(&format!(
+                    "{},{},{},{:.2}\n",
+                    csv_field(m),
+                    t.requests,
+                    tokens(t),
+                    t.usage.cost_usd,
+                ));
+            }
+            o
+        }
+        Fmt::Table => {
+            let (b, r) = if colors { (BOLD, RESET) } else { ("", "") };
+            let (d, dr) = if colors { (DIM, RESET) } else { ("", "") };
+            let mut o = format!("\n{b}By model{r}\n");
+            o.push_str(&format!(
+                " {b}{:<32}{r} {:>6} {:>10} {:>10}\n",
+                "Model", "Reqs", "Tokens", "Cost"
+            ));
+            let total_cost: f64 = by_model.values().map(|t| t.usage.cost_usd).sum();
+            for (m, t) in by_model {
+                let share = if total_cost > 0.0 {
+                    format!(" {d}{:>5.1}%{dr}", t.usage.cost_usd / total_cost * 100.0)
+                } else {
+                    String::new()
+                };
+                o.push_str(&format!(
+                    " {:<32} {:>6} {:>10} {:>10}{share}\n",
+                    m,
+                    compact(t.requests),
+                    compact(tokens(t)),
+                    money(t.usage.cost_usd),
+                ));
+            }
+            o
+        }
     }
-    let mut o = format!("\n{BOLD}By model{RESET}\n");
-    o.push_str(&format!(
-        " {BOLD}{:<32}{RESET} {:>6} {:>10} {:>10}\n",
-        "Model", "Reqs", "Tokens", "Cost"
-    ));
-    let total_cost: f64 = by_model.values().map(|t| t.usage.cost_usd).sum();
-    for (m, t) in by_model {
-        let tokens = t.usage.input_tokens + t.usage.output_tokens + t.usage.cache_read_tokens;
-        let share = if total_cost > 0.0 {
-            format!(
-                " {DIM}{:>5.1}%{RESET}",
-                t.usage.cost_usd / total_cost * 100.0
-            )
-        } else {
-            String::new()
-        };
-        o.push_str(&format!(
-            " {:<32} {:>6} {:>10} {:>10}{share}\n",
-            m,
-            compact(t.requests),
-            compact(tokens),
-            money(t.usage.cost_usd),
-        ));
-    }
-    o
 }
 
 #[cfg(test)]
@@ -287,8 +398,54 @@ mod tests {
             },
         };
         by.insert("we\"ird\\name".into(), t);
-        let out = project_table(&by, true);
+        let out = project_table(&by, Fmt::Json, false);
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert_eq!(v["projects"]["we\"ird\\name"]["requests"], 1);
+    }
+
+    #[test]
+    fn csv_quotes_and_includes_cache_write() {
+        let mut by: ByProject = ByProject::new();
+        by.insert(
+            "a,b".into(),
+            Totals {
+                requests: 2,
+                usage: Usage {
+                    input_tokens: 10,
+                    output_tokens: 20,
+                    cache_read_tokens: 30,
+                    cache_write_tokens: 40,
+                    cost_usd: 1.5,
+                },
+            },
+        );
+        let out = project_table(&by, Fmt::Csv, false);
+        assert_eq!(
+            out,
+            "project,requests,tokens,cost_usd\n\"a,b\",2,100,1.50\n"
+        );
+    }
+
+    #[test]
+    fn table_rows_include_cache_write_column() {
+        let by: crate::reports::ByDay = [(
+            "2026-09-27".to_string(),
+            Totals {
+                requests: 1,
+                usage: Usage {
+                    input_tokens: 1,
+                    output_tokens: 2,
+                    cache_read_tokens: 3,
+                    cache_write_tokens: 4,
+                    cost_usd: 0.1,
+                },
+            },
+        )]
+        .into_iter()
+        .collect();
+        let total = crate::reports::sum_days(&by);
+        let out = table("local", "test", &by, &total, None, Fmt::Table, false);
+        assert!(out.contains("Cache wr"));
+        assert!(out.contains(" 4 "));
     }
 }

@@ -39,6 +39,11 @@ fn main() {
         return;
     }
 
+    let fmt = output_fmt(&args);
+    let colors = !args.plain && render::color_enabled();
+    let tz = args.tz.unwrap_or(0);
+    let tz_suffix = |t: i64| cmduse_core::dates::tz_offset_suffix(t);
+
     // offline local reports — no API, no key needed
     match args.subcmd {
         Some(cli::SubCmd::Daily) => {
@@ -46,9 +51,9 @@ fn main() {
             let data_source = if args.local {
                 None
             } else {
-                api::api_key().ok().map(|k| {
-                    reports::load_account_daily(args.last.unwrap_or(7), &k, args.tz.unwrap_or(0))
-                })
+                api::api_key()
+                    .ok()
+                    .map(|k| reports::load_account_daily(args.last.unwrap_or(7), &k, tz))
             };
             match data_source {
                 Some(Ok(by_day)) => {
@@ -61,7 +66,8 @@ fn main() {
                             &by_day,
                             &total,
                             None,
-                            args.json
+                            fmt,
+                            colors
                         )
                     );
                 }
@@ -70,16 +76,16 @@ fn main() {
                     std::process::exit(1);
                 }
                 None => {
-                    let d = reports::load_local();
+                    let d = reports::load_local(tz);
+                    let subtitle = if tz != 0 {
+                        format!("offline, ~/.commandcode/projects, UTC{}", tz_suffix(tz))
+                    } else {
+                        "offline, ~/.commandcode/projects".to_string()
+                    };
                     print!(
                         "{}",
                         report_render::table(
-                            "local",
-                            "offline, ~/.commandcode/projects",
-                            &d.by_day,
-                            &d.total,
-                            args.last,
-                            args.json
+                            "local", &subtitle, &d.by_day, &d.total, args.last, fmt, colors
                         )
                     );
                 }
@@ -88,7 +94,7 @@ fn main() {
         }
         Some(cli::SubCmd::Hours) => {
             let rows = if args.local {
-                reports::load_local_hourly(args.hours.unwrap_or(24))
+                reports::load_local_hourly(args.hours.unwrap_or(24), tz)
             } else {
                 let key = match api::api_key() {
                     Ok(k) => k,
@@ -97,11 +103,7 @@ fn main() {
                         std::process::exit(1);
                     }
                 };
-                match reports::load_account_hourly(
-                    args.hours.unwrap_or(24),
-                    &key,
-                    args.tz.unwrap_or(0),
-                ) {
+                match reports::load_account_hourly(args.hours.unwrap_or(24), &key, tz) {
                     Ok(r) => r,
                     Err(e) => {
                         eprintln!("error: {e}");
@@ -110,29 +112,33 @@ fn main() {
                 }
             };
             let subtitle = if args.local {
-                "local, CLI sessions".to_string()
-            } else if let Some(tz) = args.tz {
-                format!(
-                    "all harnesses, UTC{}",
-                    cmduse_core::dates::tz_offset_suffix(tz)
-                )
+                if tz != 0 {
+                    format!("local, CLI sessions, UTC{}", tz_suffix(tz))
+                } else {
+                    "local, CLI sessions".to_string()
+                }
+            } else if args.tz.is_some() {
+                format!("all harnesses, UTC{}", tz_suffix(tz))
             } else {
                 "all harnesses, UTC".to_string()
             };
             print!(
                 "{}",
-                report_render::hourly_table(&rows, args.json, &subtitle)
+                report_render::hourly_table(&rows, fmt, &subtitle, colors)
             );
             return;
         }
         Some(cli::SubCmd::Model) => {
-            let d = reports::load_local();
-            print!("{}", report_render::model_table(&d.by_model, args.json));
+            let d = reports::load_local(tz);
+            print!("{}", report_render::model_table(&d.by_model, fmt, colors));
             return;
         }
         Some(cli::SubCmd::Session) => {
-            let d = reports::load_local();
-            print!("{}", report_render::project_table(&d.by_project, args.json));
+            let d = reports::load_local(tz);
+            print!(
+                "{}",
+                report_render::project_table(&d.by_project, fmt, colors)
+            );
             return;
         }
         Some(cli::SubCmd::Statusline) => {
@@ -170,7 +176,7 @@ fn main() {
         let s = snapshot::snapshot();
         if args.json {
             println!("{}", render::render_json(&s));
-        } else if args.plain {
+        } else if args.plain || !render::color_enabled() {
             print!("{}", render::render_plain(&s));
         } else {
             print!("{}", render::render(&s, bar_width));
@@ -572,11 +578,18 @@ fn plans_cmd(args: &cli::Args) {
     if args.json {
         print!("{}", render::plans_json(&current));
     } else {
-        use std::io::IsTerminal;
-        print!(
-            "{}",
-            render::plans_table(&current, std::io::stdout().is_terminal())
-        );
+        print!("{}", render::plans_table(&current, render::color_enabled()));
+    }
+}
+
+/// Report output format. `--json`/`--csv` are mutually exclusive (parse-guarded).
+fn output_fmt(args: &cli::Args) -> report_render::Fmt {
+    if args.json {
+        report_render::Fmt::Json
+    } else if args.csv {
+        report_render::Fmt::Csv
+    } else {
+        report_render::Fmt::Table
     }
 }
 

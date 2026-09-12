@@ -1,5 +1,13 @@
 use crate::api::{CreditsResp, SubData, UsageSummary};
 pub use cmduse_core::{compact, money, plan_monthly_cap, plan_name, PLANS};
+use std::io::IsTerminal;
+
+/// Colors unless `NO_COLOR` is set non-empty (no-color.org) or stdout is not a
+/// terminal — piping a report must never leak SGR escapes.
+pub fn color_enabled() -> bool {
+    let no_color = std::env::var("NO_COLOR").is_ok_and(|v| !v.is_empty());
+    !no_color && std::io::stdout().is_terminal()
+}
 
 pub const RESET: &str = "\x1b[0m";
 pub const DIM: &str = "\x1b[2m";
