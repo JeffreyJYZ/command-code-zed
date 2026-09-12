@@ -26,6 +26,26 @@ const KNOWN_MODELS = data.knownModels as string[];
 /** deprecated/aliased model id -> canonical id */
 const MODEL_ALIASES = data.aliases as Record<string, string>;
 
+/** ISO timestamp the snapshot was extracted (absent on pre-metadata files). */
+export const GATE_EXTRACTED_AT = (data as { extractedAt?: string }).extractedAt;
+/** Command Code CLI version the snapshot was scraped from. */
+export const GATE_CLI_VERSION = (data as { cliVersion?: string }).cliVersion;
+
+const GATE_STALE_DAYS = 30;
+let staleWarned = false;
+
+/** Warn once per process when gating.json is older than 30 days. */
+export function warnIfGatingStale(): void {
+	if (staleWarned || !GATE_EXTRACTED_AT) return;
+	const days = Math.floor((Date.now() - Date.parse(GATE_EXTRACTED_AT)) / 86_400_000);
+	if (days > GATE_STALE_DAYS) {
+		staleWarned = true;
+		console.warn(
+			`[command-code] gating snapshot is ${days}d old (CLI ${GATE_CLI_VERSION ?? "?"}) — run \`bun run extract\` in opencode/`,
+		);
+	}
+}
+
 /** strip a trailing date suffix like -20251101 before aliasing (mirrors CLI kr regex) */
 function findKnown(s: string): string | undefined {
 	const k = s.toLowerCase();

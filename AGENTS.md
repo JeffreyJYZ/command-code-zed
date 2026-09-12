@@ -43,7 +43,10 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (no core crate;
   imports the same files. Edit the JSON, not the generated consts or the TS.
   `opencode/scripts/extract-gating.ts` regenerates `gating.json` from the
   installed Command Code CLI bundle (`bun run extract`); the hand-probed
-  `hardBlocked` entries live in that script.
+  `hardBlocked` entries live in that script. The file carries `extractedAt`
+  + `cliVersion`; cli and opencode warn when the snapshot is >30d old, and
+  both warn when the API returns a plan id no `plans.json` rule matches
+  (the dashboard would otherwise silently show "Free" with no cap).
 - **Behavior vectors live in `core/conformance.json`.** Rust (`core` test) and
   TS (`opencode/test/conformance.test.ts`) both run it, so the two language
   ports of money/compact/pct/duration/rel_time/parse_iso_utc/elapsed_pct/

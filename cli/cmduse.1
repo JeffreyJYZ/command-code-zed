@@ -200,7 +200,8 @@ and free credits; purchased/free credits unlock everything, an unknown plan
 shows everything.  The gate is a close approximation of the API's (the
 server enforces the real limit), so a misclassification could show or hide
 one model.  With \fB\-\-json\fR it does not filter: every model is emitted
-with additional \fBallowed\fR (bool) and \fBreason\fR (string) fields.
+with additional \fBallowed\fR (bool) and \fBreason\fR (string) fields.  If the
+bundled gating snapshot is older than 30 days a warning is printed to stderr.
 .TP
 .B \-W, \-\-watch
 Force watch mode (the default).  Conflicts with
@@ -486,6 +487,10 @@ redraw in real terminals.
 .IP \(bu
 Account dailies and hourlies are UTC; a session near a midnight boundary
 splits across two day rows.
+.IP \(bu
+If the API returns a plan id not in the local plan table, the dashboard labels
+it "Free" with no monthly cap and prints a one\-time warning to stderr; update
+\fIcore/plans.json\fR to teach it the new plan.
 .SH SEE ALSO
 .BR cmd (1),
 the Command Code CLI for login and authentication.

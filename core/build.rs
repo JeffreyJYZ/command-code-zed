@@ -106,6 +106,15 @@ fn main() {
     out.push_str(&str_slice(&g["knownModels"]));
     out.push_str(";\n");
 
+    out.push_str(&format!(
+        "pub const GATE_EXTRACTED_AT: &str = \"{}\";\n",
+        g["extractedAt"].as_str().unwrap_or("")
+    ));
+    out.push_str(&format!(
+        "pub const GATE_CLI_VERSION: &str = \"{}\";\n",
+        g["cliVersion"].as_str().unwrap_or("")
+    ));
+
     out.push_str("pub static GATE_ALIASES: &[(&str, &str)] = &[\n");
     for (from, to) in g["aliases"].as_object().expect("aliases") {
         out.push_str(&format!(

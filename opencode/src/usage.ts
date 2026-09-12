@@ -160,6 +160,24 @@ export function planMonthlyCap(planId: string): number | undefined {
 	return CAPS[planName(planId)] ?? undefined;
 }
 
+/** True when `planId` matched a NAME_RULES entry (not the DEFAULT_NAME
+ * fallback). Mirrors cmduse_core::plan_rule_matched. */
+export function planRuleMatched(planId: string): boolean {
+	const id = planId.toLowerCase();
+	return NAME_RULES.some((rule) => rule.needles.every((n) => id.includes(n)));
+}
+
+let unknownPlanWarned = false;
+
+/** Warn once per process when the API names a plan no rule recognizes. */
+function warnUnknownPlanOnce(planId: string): void {
+	if (unknownPlanWarned) return;
+	unknownPlanWarned = true;
+	console.warn(
+		`[command-code] unknown plan id '${planId}' — showing Free; update core/plans.json`,
+	);
+}
+
 export function planName(planId: string): string {
 	const id = planId.toLowerCase();
 	for (const rule of NAME_RULES) {
@@ -204,6 +222,10 @@ export async function renderUsage(key: string): Promise<string> {
 		credits(key),
 		usageSummary(key).catch(() => undefined),
 	]);
+
+	if (sub.planId && sub.planId !== "free" && !planRuleMatched(sub.planId)) {
+		warnUnknownPlanOnce(sub.planId);
+	}
 
 	const lines: string[] = [];
 	lines.push(`## Command Code — ${planName(sub.planId)} (${sub.status})\n`);

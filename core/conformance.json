@@ -88,13 +88,13 @@
 		}
 	],
 	"plan": [
-		{ "id": "individual-goat", "name": "GOAT", "cap": 70.0 },
-		{ "id": "individual-max-20", "name": "Max 20x", "cap": 300.0 },
-		{ "id": "individual-max-10x", "name": "Max 10x", "cap": 150.0 },
-		{ "id": "individual-provider", "name": "Provider", "cap": null },
-		{ "id": "individual-pro", "name": "Pro", "cap": 80.0 },
-		{ "id": "teams-pro", "name": "Team Pro", "cap": 40.0 },
-		{ "id": "bogus", "name": "Free", "cap": null }
+		{ "id": "individual-goat", "name": "GOAT", "cap": 70.0, "matched": true },
+		{ "id": "individual-max-20", "name": "Max 20x", "cap": 300.0, "matched": true },
+		{ "id": "individual-max-10x", "name": "Max 10x", "cap": 150.0, "matched": true },
+		{ "id": "individual-provider", "name": "Provider", "cap": null, "matched": true },
+		{ "id": "individual-pro", "name": "Pro", "cap": 80.0, "matched": true },
+		{ "id": "teams-pro", "name": "Team Pro", "cap": 40.0, "matched": true },
+		{ "id": "bogus", "name": "Free", "cap": null, "matched": false }
 	],
 	"gating": [
 		{ "model": "claude-opus-5", "plan": "individual-goat", "unlocked": false, "allowed": false },

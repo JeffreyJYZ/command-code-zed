@@ -13,6 +13,7 @@ import {
 	pctStr,
 	planMonthlyCap,
 	planName,
+	planRuleMatched,
 	relTime,
 } from "../src/usage";
 
@@ -35,7 +36,7 @@ type PaceCase = {
 };
 type RelCase = { resetAtMs: number | null; now: number; out: string };
 type IsoCase = { in: string; outMs: number | null };
-type PlanCase = { id: string; name: string; cap: number | null };
+type PlanCase = { id: string; name: string; cap: number | null; matched: boolean };
 
 describe("conformance vectors (shared with cmduse-core)", () => {
 	test("money", () => {
@@ -121,6 +122,7 @@ describe("conformance vectors (shared with cmduse-core)", () => {
 		for (const c of conformance.plan as PlanCase[]) {
 			expect([c.id, planName(c.id)]).toEqual([c.id, c.name]);
 			expect([c.id, planMonthlyCap(c.id) ?? null]).toEqual([c.id, c.cap]);
+			expect([c.id, planRuleMatched(c.id)]).toEqual([c.id, c.matched]);
 		}
 	});
 	test("gating", () => {

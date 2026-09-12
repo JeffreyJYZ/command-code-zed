@@ -8,7 +8,17 @@
 // one ships, or re-locating the literals by their stable string anchors below.
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+
+/** Version of the Command Code CLI the tables were scraped from. */
+function cliVersion(cliPath: string): string {
+	try {
+		const pkg = JSON.parse(readFileSync(join(dirname(cliPath), "..", "package.json"), "utf8"));
+		return typeof pkg.version === "string" ? pkg.version : "unknown";
+	} catch {
+		return "unknown";
+	}
+}
 
 function findCliMjs(): string {
 	const roots = [
@@ -41,7 +51,8 @@ function findCliMjs(): string {
 	throw new Error("cli.mjs not found — install Command Code CLI (npm i -g command-code)");
 }
 
-const src = readFileSync(findCliMjs(), "utf8");
+const cliPath = findCliMjs();
+const src = readFileSync(cliPath, "utf8");
 
 function grab(start: string, end: string): string {
 	const i = src.indexOf(start);
@@ -138,7 +149,10 @@ const hardBlocked: Record<string, string[]> = {
 
 // Single source for the gating data, consumed by the opencode plugin (import)
 // and cmduse-core's build.rs (Rust CLI). src/gating.ts is a thin typed loader.
+// extractedAt/cliVersion let consumers warn when the snapshot goes stale.
 const out = {
+	extractedAt: new Date().toISOString(),
+	cliVersion: cliVersion(cliPath),
 	categories,
 	plans,
 	knownModels: known,

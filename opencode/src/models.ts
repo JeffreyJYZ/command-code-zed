@@ -1,5 +1,6 @@
 import { evaluateModelAccess, type PlanLike } from "./access";
 import { credits, providerModels, subscriptions } from "./api";
+import { warnIfGatingStale } from "./gating";
 
 export type CmdModel = { id: string; name: string; contextLength: number };
 
@@ -30,6 +31,7 @@ export function splitModels(models: CmdModel[]): {
 
 /** Fetch live model list, apply plan gating, split by wire protocol. */
 export async function loadModels(key: string): Promise<ModelSplit> {
+	warnIfGatingStale();
 	let models: CmdModel[];
 	if (cache && Date.now() - cache.at < CACHE_TTL_MS) {
 		models = cache.models;

@@ -67,7 +67,10 @@ pub fn snapshot() -> Snapshot {
 
     let mut errs: Vec<String> = Vec::new();
     match r_sub {
-        Ok(v) => s.sub = v,
+        Ok(v) => {
+            warn_unknown_plan(&v.plan_id);
+            s.sub = v;
+        }
         Err(e) => errs.push(e),
     }
     match r_credits {
@@ -83,6 +86,20 @@ pub fn snapshot() -> Snapshot {
     }
 
     s
+}
+
+/// Warn once per process when the API returns a plan id no NAME_RULE knows:
+/// the dashboard would label it "Free" with no monthly cap until plans.json
+/// is updated. "free"/empty are real states, not unknowns.
+fn warn_unknown_plan(plan_id: &str) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if plan_id.is_empty() || plan_id == "free" || cmduse_core::plan_rule_matched(plan_id) {
+        return;
+    }
+    if !WARNED.swap(true, Ordering::Relaxed) {
+        eprintln!("warning: unknown plan id '{plan_id}' — showing Free; update core/plans.json");
+    }
 }
 
 fn empty_snapshot() -> Snapshot {

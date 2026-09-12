@@ -476,6 +476,16 @@ fn redraw_frame(
 }
 
 fn models_cmd(args: &cli::Args) {
+    if args.gated {
+        if let Some(days) = cmduse_core::gate_age_days(cmduse_core::dates::now_secs()) {
+            if days > 30 {
+                eprintln!(
+                    "warning: gating snapshot is {days}d old (CLI {}) — run `bun run extract` in opencode/",
+                    cmduse_core::GATE_CLI_VERSION
+                );
+            }
+        }
+    }
     let key = match api::api_key() {
         Ok(k) => k,
         Err(e) => {

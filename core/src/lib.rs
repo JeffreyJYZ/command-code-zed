@@ -21,6 +21,16 @@ pub fn plan_name(plan_id: &str) -> &'static str {
     DEFAULT_NAME
 }
 
+/// True when `plan_id` matched a NAME_RULES entry rather than falling through
+/// to DEFAULT_NAME. Callers warn on false: the API returned a plan we don't
+/// know, so its name/cap may be wrong until `plans.json` is updated.
+pub fn plan_rule_matched(plan_id: &str) -> bool {
+    let id = plan_id.to_lowercase();
+    NAME_RULES
+        .iter()
+        .any(|(needles, _)| needles.iter().all(|n| id.contains(n)))
+}
+
 /// Monthly credit pool per plan. One shared pool per plan (verified — the
 /// docs' per-model allowances are not what the API meters). None = PAYG.
 pub fn plan_monthly_cap(plan_id: &str) -> Option<f64> {
@@ -268,6 +278,13 @@ pub fn gate(model: &str, plan_id: &str, unlocked: bool) -> (bool, &'static str) 
     (true, "allowed")
 }
 
+/// Age of the gating snapshot in days, from `gating.json`'s `extractedAt`.
+/// None when the metadata is absent/unparseable (pre-metadata snapshots).
+pub fn gate_age_days(now_secs: u64) -> Option<u64> {
+    let ms = dates::parse_iso_utc(GATE_EXTRACTED_AT)?;
+    Some(now_secs.saturating_sub((ms / 1000.0) as u64) / 86400)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,6 +298,17 @@ mod tests {
         assert_eq!(plan_name("teams-pro"), "Team Pro");
         assert_eq!(plan_name("individual-provider"), "Provider");
         assert_eq!(plan_name("bogus"), "Free");
+    }
+
+    #[test]
+    fn plan_rule_match_and_gate_age() {
+        assert!(plan_rule_matched("individual-goat"));
+        assert!(plan_rule_matched("teams-pro"));
+        assert!(!plan_rule_matched("free"));
+        assert!(!plan_rule_matched("bogus"));
+        let secs = (parse_iso_utc(GATE_EXTRACTED_AT).expect("extractedAt ISO") / 1000.0) as u64;
+        assert_eq!(gate_age_days(secs), Some(0));
+        assert_eq!(gate_age_days(secs + 40 * 86400), Some(40));
     }
 
     #[test]
@@ -483,6 +511,11 @@ mod tests {
             let id = c["id"].as_str().unwrap();
             assert_eq!(plan_name(id), c["name"].as_str().unwrap(), "name {id}");
             assert_eq!(plan_monthly_cap(id), c["cap"].as_f64(), "cap {id}");
+            assert_eq!(
+                plan_rule_matched(id),
+                c["matched"].as_bool().unwrap(),
+                "matched {id}"
+            );
         }
         for c in v["gating"].as_array().unwrap() {
             let model = c["model"].as_str().unwrap();
