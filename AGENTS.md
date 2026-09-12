@@ -53,11 +53,16 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (no core crate;
 - Window caps (5-hour/weekly) come from the API `Window.cap` response, NOT
   derived. `plan_monthly_cap` is the only static table (monthly pool); window
   lengths are `core::FIVE_HOUR_SECS` / `core::WEEKLY_SECS`.
+- **Docs always move with the code.** Any user-visible change updates the
+  READMEs (`README.md`, `cli/README.md`), the `cli/cmduse.1` man page, and
+  this file in the same commit — never a follow-up "docs" commit. Check for
+  stale version refs and stale option/flag lists before committing.
 
 ## Build & test
 
 ```sh
 cargo test            # whole workspace (core + cli + zed-ext host tests)
+cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
 cargo build -p command-code-usage --target wasm32-wasip1 --release
 cargo package -p cmduse-core --allow-dirty   # core ships plans.json+gating.json

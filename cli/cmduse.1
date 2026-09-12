@@ -154,6 +154,8 @@ false).
 Unknown keys, non\-numeric values, and out\-of\-range values abort with a
 message and exit 2; nothing is written.
 .SH OPTIONS
+Options accept \fB\-\-name value\fR, \fB\-\-name=value\fR, and an attached short
+value (\fB\-i30\fR, \fB\-w40\fR).
 .TP
 .B \-1, \-\-once
 Fetch once, print, exit.  Without this, watch mode runs forever until
@@ -182,7 +184,7 @@ implies it on regardless of config.
 bucket by this fixed UTC offset instead of UTC.  Accepts
 .I +05:30 ", " -08:00 ", " +0530 ", " -8 .
 .TP
-.B \-\-days \fIn\fR
+.B \-\-days, \-\-last, \-l \fIn\fR
 .BR daily : number of days back (1\(en365).
 .TP
 .B \-\-hours \fIn\fR
@@ -393,7 +395,8 @@ owned_by.
 .PP
 Transient failures (TLS handshake drops, timeouts, EOF, 429, and any 5xx)
 are retried up to 5 times with an exponential backoff (1s base, 8s cap,
-jitter); a hard 15s per\-attempt timeout applies.  A watch\-mode fetch that
+jitter); a hard 15s per\-attempt timeout applies.  A 429's numeric
+\fBRetry\-After\fR is honored (capped at 60s) in place of the computed backoff.  A watch\-mode fetch that
 still fails renders a minimal error frame:
 .RS
 .nf

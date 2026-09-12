@@ -52,12 +52,15 @@ cmduse models --gated        # ...only models the current plan allows
 cmduse models --gated --json # every model annotated with allowed + reason
 cmduse plans                 # plan comparison table (marks your plan)
 cmduse statusline            # compact one-liner for prompts/tmux
-cmduse daily --json          # JSON output (daily, hourly, model, session, statusline, plans, -1)
+cmduse daily --json          # JSON output (daily, hourly, model, session, models, statusline, plans, -1)
 ```
 
 `-1 --json` emits a single dashboard object (plan, credits, both windows,
 billing summary). `--gated --json` on `models` emits every model with
 `allowed` and `reason` instead of filtering.
+
+GNU forms are accepted: `--interval=5m`, `--days=14`, and attached short values
+like `-i30` / `-w40`. `--last`/`-l` are aliases for `--days`.
 
 Cap alerts: in watch mode a desktop notification fires once when a window
 crosses into overflow (macOS `osascript`, Linux `notify-send`). Disable with

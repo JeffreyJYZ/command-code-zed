@@ -15,6 +15,7 @@ UIs; the opencode plugin is a separate TS package.
 ```sh
 cargo build                      # all Rust crates
 cargo test                       # core + cli + zed-ext (host tests)
+cargo fmt --all -- --check       # formatting (CI gate)
 cargo clippy --all-targets -- -D warnings
 cargo build -p command-code-usage --target wasm32-wasip1 --release   # Zed ext
 cargo package -p cmduse-core --allow-dirty   # ships plans.json+gating.json
