@@ -53,6 +53,10 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (no core crate;
 - Window caps (5-hour/weekly) come from the API `Window.cap` response, NOT
   derived. `plan_monthly_cap` is the only static table (monthly pool); window
   lengths are `core::FIVE_HOUR_SECS` / `core::WEEKLY_SECS`.
+- **License text is sourced, never copied.** MIT files come from the OSI
+  canonical (https://opensource.org/license/mit, SPDX `MIT`), fetched fresh —
+  never copied from another component's file. All crates/packages are MIT; the
+  body is identical, only the year/holder line is project-specific.
 - **Docs always move with the code.** Any user-visible change updates the
   READMEs (`README.md`, `cli/README.md`), the `cli/cmduse.1` man page, and
   this file in the same commit — never a follow-up "docs" commit. Check for
