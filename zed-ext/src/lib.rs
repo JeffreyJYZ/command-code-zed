@@ -5,8 +5,8 @@ use zed_extension_api::{
 };
 
 use cmduse_core::{
-    compact, elapsed_pct, money, parse_iso_utc, pct, plan_monthly_cap, plan_name, rel_time,
-    CreditsResp, SubscriptionsResp, UsageSummary, Window, PLANS,
+    compact, elapsed_pct, money, pct, plan_monthly_cap, plan_name, rel_time, CreditsResp,
+    SubscriptionsResp, UsageSummary, Window, PLANS,
 };
 
 const API_BASE: &str = "https://api.commandcode.ai";
@@ -34,8 +34,8 @@ fn get_api_key_and_now() -> Result<(String, Option<u64>), String> {
         }
         None => text.as_str(),
     };
-    let v: serde_json::Value =
-        serde_json::from_str(json_part.trim()).map_err(|e| format!("auth.json parse error: {e}"))?;
+    let v: serde_json::Value = serde_json::from_str(json_part.trim())
+        .map_err(|e| format!("auth.json parse error: {e}"))?;
     let key = v["apiKey"]
         .as_str()
         .ok_or("auth.json has no apiKey — run `cmd login`")?
@@ -59,13 +59,21 @@ fn http_get_json(path: &str, key: &str) -> Result<Vec<u8>, String> {
 }
 
 fn bar(used: f64, cap: f64) -> String {
-    let pct = if cap > 0.0 { (used / cap).clamp(0.0, 1.0) } else { 0.0 };
+    let pct = if cap > 0.0 {
+        (used / cap).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
     let filled = (pct * BAR_WIDTH as f64).round() as usize;
     format!("{}{}", "█".repeat(filled), "░".repeat(BAR_WIDTH - filled))
 }
 
 fn window_line(label: &str, w: &Window, now: Option<u64>, dur_secs: Option<u64>) -> String {
-    let status = if w.exceeded { " · **LIMIT EXCEEDED**" } else { "" };
+    let status = if w.exceeded {
+        " · **LIMIT EXCEEDED**"
+    } else {
+        ""
+    };
     let thru = dur_secs
         .and_then(|d| elapsed_pct(w.reset_at, d, now))
         .map(|p| format!(" · window {p}% elapsed"))
@@ -96,7 +104,8 @@ fn plans_table(current: &str) -> String {
     // Mark by exact plan_name match (not substring): "individual-goat"
     // contains "go", so substring matching double-marks the Go row.
     let mine = plan_name(current);
-    let mut out = String::from("| Plan | Price | Credits/mo | 5-hour | Weekly |\n|---|---|---|---|---|\n");
+    let mut out =
+        String::from("| Plan | Price | Credits/mo | 5-hour | Weekly |\n|---|---|---|---|---|\n");
     for &(name, price, monthly, h5, wk) in PLANS {
         let mark = if name == mine { "**" } else { "" };
         out.push_str(&format!(
@@ -118,13 +127,19 @@ impl Extension for CommandCodeUsage {
         args: Vec<String>,
         _worktree: Option<&Worktree>,
     ) -> Result<SlashCommandOutput, String> {
-        let arg = args.first().map(|a| a.trim().to_string()).unwrap_or_default();
+        let arg = args
+            .first()
+            .map(|a| a.trim().to_string())
+            .unwrap_or_default();
 
         if arg == "plans" {
             let text = format!("## Command Code Plans\n\n{}", plans_table(""));
             return Ok(SlashCommandOutput {
                 sections: vec![SlashCommandOutputSection {
-                    range: Range { start: 0, end: text.lines().count() as u32 },
+                    range: Range {
+                        start: 0,
+                        end: text.lines().count() as u32,
+                    },
                     label: "Plans".into(),
                 }],
                 text,
@@ -148,7 +163,10 @@ impl Extension for CommandCodeUsage {
             sub_data.status
         ));
         if let Some(end) = &sub_data.current_period_end {
-            lines.push(format!("Billing period ends `{}`\n", &end[..10.min(end.len())]));
+            lines.push(format!(
+                "Billing period ends `{}`\n",
+                &end[..10.min(end.len())]
+            ));
         }
 
         let credits: CreditsResp =
@@ -175,21 +193,29 @@ impl Extension for CommandCodeUsage {
         section_starts.push((lines.len(), "Usage Windows"));
         lines.push("### Usage windows".into());
         if let Some(c) = cap {
-            let used = (c - credits.credits.monthly_credits).clamp(0.0, c);
-            let reset_at = sub_data.current_period_end.as_ref().and_then(|e| parse_iso_utc(e));
-            let dur = match (&sub_data.current_period_start, &sub_data.current_period_end) {
-                (Some(st), Some(en)) => parse_iso_utc(st)
-                    .zip(parse_iso_utc(en))
-                    .map(|(a, b)| ((b - a) as u64 / 1000).max(1)),
-                _ => None,
-            };
-            lines.push(window_line("Monthly", &Window { used, cap: c, exceeded: false, reset_at }, now, dur));
+            let (w, dur) = cmduse_core::monthly_window(
+                c,
+                credits.credits.monthly_credits,
+                sub_data.current_period_start.as_deref(),
+                sub_data.current_period_end.as_deref(),
+            );
+            lines.push(window_line("Monthly", &w, now, dur));
         }
         if let Some(w) = &credits.window_limits.five_hour {
-            lines.push(window_line("5-hour", w, now, Some(cmduse_core::FIVE_HOUR_SECS)));
+            lines.push(window_line(
+                "5-hour",
+                w,
+                now,
+                Some(cmduse_core::FIVE_HOUR_SECS),
+            ));
         }
         if let Some(w) = &credits.window_limits.weekly {
-            lines.push(window_line("Weekly", w, now, Some(cmduse_core::WEEKLY_SECS)));
+            lines.push(window_line(
+                "Weekly",
+                w,
+                now,
+                Some(cmduse_core::WEEKLY_SECS),
+            ));
         }
         if credits.window_limits.five_hour.is_none() && credits.window_limits.weekly.is_none() {
             lines.push("No rolling windows on this plan (pay-as-you-go credits only).\n".into());
@@ -222,12 +248,18 @@ impl Extension for CommandCodeUsage {
         let sections = section_starts
             .into_iter()
             .map(|(start, label)| SlashCommandOutputSection {
-                range: Range { start: start as u32, end: total },
+                range: Range {
+                    start: start as u32,
+                    end: total,
+                },
                 label: label.into(),
             })
             .collect();
 
-        Ok(SlashCommandOutput { text: lines.join("\n"), sections })
+        Ok(SlashCommandOutput {
+            text: lines.join("\n"),
+            sections,
+        })
     }
 }
 
@@ -260,7 +292,10 @@ mod tests {
             reset_at: Some((start + d) as f64 * 1000.0),
         };
         let early = window_line("5-hour", &mk(now - d / 20), Some(now), Some(d));
-        assert!(!early.contains("on pace"), "must not warn at 5% elapsed: {early}");
+        assert!(
+            !early.contains("on pace"),
+            "must not warn at 5% elapsed: {early}"
+        );
         let at10 = window_line("5-hour", &mk(now - d / 10), Some(now), Some(d));
         assert!(
             at10.contains("on pace to hit cap in 30m"),

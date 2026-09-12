@@ -1,3 +1,5 @@
+use lexopt::prelude::*;
+
 #[derive(Default)]
 pub struct Args {
     pub interval: Option<u64>,
@@ -40,207 +42,195 @@ pub enum SubCmd {
 }
 
 pub fn parse_args() -> Args {
-    let mut a = Args {
-        interval: None,
-        once: false,
-        plain: false,
-        bar_width: None,
-        bursts: None,
-        help: false,
-        config_set: None,
-        subcmd: None,
-        last: None,
-        hours: None,
-        json: false,
-        local: false,
-        gated: false,
-        tz: None,
-    };
+    match parse_args_from(std::env::args_os()) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }
+    }
+}
+
+/// Parse a full argv (binary name first, as `std::env::args_os` yields).
+/// Split out so tests can drive it without touching the real process args.
+pub(crate) fn parse_args_from(
+    args: impl IntoIterator<Item = std::ffi::OsString>,
+) -> Result<Args, String> {
+    let mut a = Args::default();
+    let mut parser = lexopt::Parser::from_iter(args);
     let (mut saw_once, mut saw_watch) = (false, false);
-    let mut it = std::env::args().skip(1);
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
-            "-1" | "--once" => {
+    while let Some(arg) = parser.next().map_err(|e| e.to_string())? {
+        match arg {
+            Short('1') | Long("once") => {
                 a.once = true;
                 saw_once = true;
             }
-            "-p" | "--plain" => a.plain = true,
-            "-W" | "--watch" | "watch" => {
+            Short('p') | Long("plain") => a.plain = true,
+            Short('W') | Long("watch") => {
                 a.once = false; // explicit default mode
                 saw_watch = true;
             }
-            "-h" | "--help" | "help" => a.help = true,
-            "-V" | "--version" | "version" => {
+            Short('h') | Long("help") => a.help = true,
+            Short('V') | Long("version") => {
                 println!("cmduse {}", env!("CARGO_PKG_VERSION"));
                 std::process::exit(0);
             }
-            "--json" => a.json = true,
-            "--local" => a.local = true,
-            "--gated" => a.gated = true,
-            "--tz" => {
-                let Some(v) = it.next() else {
-                    eprintln!("--tz needs an offset like +05:30 or -08:00");
-                    std::process::exit(2);
-                };
+            Long("json") => a.json = true,
+            Long("local") => a.local = true,
+            Long("gated") => a.gated = true,
+            Long("tz") => {
+                let v = need_value(&mut parser, "--tz needs an offset like +05:30 or -08:00")?;
                 match parse_tz(&v) {
                     Some(secs) => a.tz = Some(secs),
                     None => {
-                        eprintln!("--tz needs an offset like +05:30 or -08:00 (got '{v}')");
-                        std::process::exit(2);
+                        return Err(format!(
+                            "--tz needs an offset like +05:30 or -08:00 (got '{v}')"
+                        ))
                     }
                 }
             }
-            "-i" | "--interval" => {
-                let Some(v) = it.next() else {
-                    eprintln!("-i needs a duration 1s–24h (e.g. 30, 30s, 5m, 1h)");
-                    std::process::exit(2);
-                };
+            Short('i') | Long("interval") => {
+                let v = need_value(
+                    &mut parser,
+                    "-i needs a duration 1s–24h (e.g. 30, 30s, 5m, 1h)",
+                )?;
                 match parse_duration(&v) {
                     Some(n) if (1..=86_400).contains(&n) => a.interval = Some(n),
                     _ => {
-                        eprintln!("-i needs a duration 1s–24h (e.g. 30, 30s, 5m, 1h) (got '{v}')");
-                        std::process::exit(2);
+                        return Err(format!(
+                            "-i needs a duration 1s–24h (e.g. 30, 30s, 5m, 1h) (got '{v}')"
+                        ))
                     }
                 }
             }
-            "-w" | "--bar-width" => {
-                let Some(v) = it.next() else {
-                    eprintln!("-w needs a number 5–200");
-                    std::process::exit(2);
-                };
+            Short('w') | Long("bar-width") => {
+                let v = need_value(&mut parser, "-w needs a number 5–200")?;
                 match v.parse::<usize>() {
                     Ok(n) if (5..=200).contains(&n) => a.bar_width = Some(n),
-                    _ => {
-                        eprintln!("-w needs a number 5–200 (got '{v}')");
-                        std::process::exit(2);
-                    }
+                    _ => return Err(format!("-w needs a number 5–200 (got '{v}')")),
                 }
             }
-            "-b" | "--bursts" => {
-                let Some(v) = it.next() else {
-                    eprintln!("-b needs a number 5–240");
-                    std::process::exit(2);
-                };
+            Short('b') | Long("bursts") => {
+                let v = need_value(&mut parser, "-b needs a number 5–240")?;
                 match v.parse::<usize>() {
                     Ok(n) if (5..=240).contains(&n) => a.bursts = Some(n),
-                    _ => {
-                        eprintln!("-b needs a number 5–240 (got '{v}')");
-                        std::process::exit(2);
-                    }
+                    _ => return Err(format!("-b needs a number 5–240 (got '{v}')")),
                 }
             }
-            "--days" | "--last" | "-l" => match it.next().and_then(|v| v.parse::<usize>().ok()) {
-                Some(n) => a.last = Some(n.clamp(1, 365)),
-                None => {
-                    eprintln!("--days needs a number (e.g. --days 7)");
-                    std::process::exit(2);
+            Long("days") | Long("last") | Short('l') => {
+                let v = need_value(&mut parser, "--days needs a number (e.g. --days 7)")?;
+                match v.parse::<usize>() {
+                    Ok(n) => a.last = Some(n.clamp(1, 365)),
+                    Err(_) => return Err("--days needs a number (e.g. --days 7)".into()),
                 }
+            }
+            Long("hours") => {
+                let v = need_value(
+                    &mut parser,
+                    "--hours needs a number (e.g. --hours 6, max 168)",
+                )?;
+                match v.parse::<usize>() {
+                    Ok(n) => a.hours = Some(n.clamp(1, 168)),
+                    Err(_) => return Err("--hours needs a number (e.g. --hours 6, max 168)".into()),
+                }
+            }
+            Value(v) => match v.to_string_lossy().as_ref() {
+                "watch" => {
+                    a.once = false;
+                    saw_watch = true;
+                }
+                "help" => a.help = true,
+                "version" => {
+                    println!("cmduse {}", env!("CARGO_PKG_VERSION"));
+                    std::process::exit(0);
+                }
+                "daily" | "days" => a.subcmd = Some(SubCmd::Daily),
+                "hourly" | "hours" => a.subcmd = Some(SubCmd::Hours),
+                "model" => a.subcmd = Some(SubCmd::Model),
+                "session" | "sessions" | "project" => a.subcmd = Some(SubCmd::Session),
+                "models" => a.subcmd = Some(SubCmd::Models),
+                "plans" => a.subcmd = Some(SubCmd::Plans),
+                "statusline" => a.subcmd = Some(SubCmd::Statusline),
+                "config" => a.config_set = Some(parse_config_set(&mut parser)?),
+                other => return Err(format!("unknown arg: {other} (try --help)")),
             },
-            "--hours" => match it.next().and_then(|v| v.parse::<usize>().ok()) {
-                Some(n) => a.hours = Some(n.clamp(1, 168)),
-                None => {
-                    eprintln!("--hours needs a number (e.g. --hours 6, max 168)");
-                    std::process::exit(2);
-                }
-            },
-            "daily" | "days" => a.subcmd = Some(SubCmd::Daily),
-            "hourly" | "hours" => a.subcmd = Some(SubCmd::Hours),
-            "model" => a.subcmd = Some(SubCmd::Model),
-            "session" | "sessions" | "project" => a.subcmd = Some(SubCmd::Session),
-            "models" => a.subcmd = Some(SubCmd::Models),
-            "plans" => a.subcmd = Some(SubCmd::Plans),
-            "statusline" => a.subcmd = Some(SubCmd::Statusline),
-            "config" => {
-                // config set [interval=<s>] [width=<n>]
-                if let Some(sub) = it.next() {
-                    if sub == "set" {
-                        let mut cs = ConfigSet::default();
-                        for kv in it.by_ref() {
-                            let (k, v) = match kv.split_once('=') {
-                                Some(kv) => kv,
-                                None => {
-                                    eprintln!("config: expected key=value, got '{kv}' (keys: interval, width)");
-                                    std::process::exit(2);
-                                }
-                            };
-                            match k {
-                                "interval" => match v.parse() {
-                                    Ok(n) => cs.interval = Some(n),
-                                    Err(_) => {
-                                        eprintln!("config: interval must be a number, got '{v}'");
-                                        std::process::exit(2);
-                                    }
-                                },
-                                "width" => match v.parse() {
-                                    Ok(n) => cs.width = Some(n),
-                                    Err(_) => {
-                                        eprintln!("config: width must be a number, got '{v}'");
-                                        std::process::exit(2);
-                                    }
-                                },
-                                "sl" | "statusline" => cs.sl_template = Some(v.to_string()),
-                                "sl_colors" => match v.parse() {
-                                    Ok(b) => cs.sl_colors = Some(b),
-                                    Err(_) => {
-                                        eprintln!("config: sl_colors must be true/false, got '{v}'");
-                                        std::process::exit(2);
-                                    }
-                                },
-                                "sl_ascii" => match v.parse() {
-                                    Ok(b) => cs.sl_ascii = Some(b),
-                                    Err(_) => {
-                                        eprintln!("config: sl_ascii must be true/false, got '{v}'");
-                                        std::process::exit(2);
-                                    }
-                                },
-                                "burst" | "bursts" => match v.parse() {
-                                    Ok(n) => cs.bursts = Some(n),
-                                    Err(_) => {
-                                        eprintln!("config: bursts must be a number, got '{v}'");
-                                        std::process::exit(2);
-                                    }
-                                },
-                                "burst_on" | "burst-on" => match v.parse() {
-                                    Ok(b) => cs.burst_on = Some(b),
-                                    Err(_) => {
-                                        eprintln!("config: burst_on must be true/false, got '{v}'");
-                                        std::process::exit(2);
-                                    }
-                                },
-                                "notify" | "notify_on_cap" => match v.parse() {
-                                    Ok(b) => cs.notify = Some(b),
-                                    Err(_) => {
-                                        eprintln!("config: notify must be true/false, got '{v}'");
-                                        std::process::exit(2);
-                                    }
-                                },
-                                other => {
-                                    eprintln!("config: unknown key '{other}' (keys: interval, width, sl, sl_colors, sl_ascii, burst, burst_on, notify)");
-                                    std::process::exit(2);
-                                }
-                            }
-                        }
-                        a.config_set = Some(cs);
-                    } else {
-                        eprintln!("config: unknown subcommand '{sub}' (try: config set interval=10)");
-                        std::process::exit(2);
-                    }
-                } else {
-                    eprintln!("config: missing subcommand (try: config set interval=10)");
-                    std::process::exit(2);
-                }
-            }
-            other => {
-                eprintln!("unknown arg: {other} (try --help)");
-                std::process::exit(2);
-            }
+            Short(c) => return Err(format!("unknown arg: -{c} (try --help)")),
+            Long(l) => return Err(format!("unknown arg: --{l} (try --help)")),
         }
     }
     if saw_once && saw_watch {
-        eprintln!("cannot combine -1/--once with -W/--watch");
-        std::process::exit(2);
+        return Err("cannot combine -1/--once with -W/--watch".into());
     }
-    a
+    Ok(a)
+}
+
+fn need_value(parser: &mut lexopt::Parser, msg: &str) -> Result<String, String> {
+    parser
+        .value()
+        .map(|v| v.to_string_lossy().into_owned())
+        .map_err(|_| msg.to_string())
+}
+
+/// `config set [key=value …]` — the rest of argv after the `config` positional.
+fn parse_config_set(parser: &mut lexopt::Parser) -> Result<ConfigSet, String> {
+    match parser.next().map_err(|e| e.to_string())? {
+        Some(Value(v)) if v.to_string_lossy() == "set" => {}
+        Some(Value(v)) => {
+            return Err(format!(
+                "config: unknown subcommand '{}' (try: config set interval=10)",
+                v.to_string_lossy()
+            ))
+        }
+        _ => return Err("config: missing subcommand (try: config set interval=10)".into()),
+    }
+    let mut cs = ConfigSet::default();
+    while let Some(arg) = parser.next().map_err(|e| e.to_string())? {
+        let Value(kv) = arg else {
+            return Err("config: expected key=value".into());
+        };
+        let kv = kv.to_string_lossy();
+        let Some((k, v)) = kv.split_once('=') else {
+            return Err(format!(
+                "config: expected key=value, got '{kv}' (keys: interval, width)"
+            ));
+        };
+        match k {
+            "interval" => {
+                cs.interval = Some(
+                    v.parse()
+                        .map_err(|_| format!("config: interval must be a number, got '{v}'"))?,
+                )
+            }
+            "width" => {
+                cs.width = Some(
+                    v.parse()
+                        .map_err(|_| format!("config: width must be a number, got '{v}'"))?,
+                )
+            }
+            "sl" | "statusline" => cs.sl_template = Some(v.to_string()),
+            "sl_colors" => cs.sl_colors = Some(parse_bool(v, "sl_colors")?),
+            "sl_ascii" => cs.sl_ascii = Some(parse_bool(v, "sl_ascii")?),
+            "burst" | "bursts" => {
+                cs.bursts = Some(
+                    v.parse()
+                        .map_err(|_| format!("config: bursts must be a number, got '{v}'"))?,
+                )
+            }
+            "burst_on" | "burst-on" => cs.burst_on = Some(parse_bool(v, "burst_on")?),
+            "notify" | "notify_on_cap" => cs.notify = Some(parse_bool(v, "notify")?),
+            other => {
+                return Err(format!(
+                    "config: unknown key '{other}' (keys: interval, width, sl, sl_colors, sl_ascii, burst, burst_on, notify)"
+                ))
+            }
+        }
+    }
+    Ok(cs)
+}
+
+fn parse_bool(v: &str, key: &str) -> Result<bool, String> {
+    v.parse()
+        .map_err(|_| format!("config: {key} must be true/false, got '{v}'"))
 }
 
 /// Parse a refresh duration: bare seconds ("30"), or with a unit suffix
@@ -261,25 +251,9 @@ pub fn parse_duration(s: &str) -> Option<u64> {
 }
 
 /// Parse a UTC offset "+05:30" / "-08:00" / "+0530" / "-8" → seconds east.
+/// Splitting lives in `cmduse_core::dates`; this adds the CLI's range check.
 pub fn parse_tz(s: &str) -> Option<i64> {
-    let (sign, rest) = if let Some(t) = s.strip_prefix('-') {
-        (-1i64, t)
-    } else if let Some(t) = s.strip_prefix('+') {
-        (1i64, t)
-    } else {
-        return None;
-    };
-    if rest.is_empty() {
-        return None;
-    }
-    let (h, m) = match rest.split_once(':') {
-        Some((h, m)) => (h.parse::<i64>().ok()?, m.parse::<i64>().ok()?),
-        None if rest.len() == 4 => {
-            let (h, m) = rest.split_at(2);
-            (h.parse::<i64>().ok()?, m.parse::<i64>().ok()?)
-        }
-        None => (rest.parse::<i64>().ok()?, 0),
-    };
+    let (sign, h, m) = cmduse_core::dates::parse_tz_parts(s)?;
     if h > 14 || m > 59 {
         return None;
     }
@@ -323,7 +297,9 @@ Options:
   -h, --help            This help
 
 Config: ~/.config/cmd-usage/config.json
-  { \"interval_secs\": 5, \"bar_width\": 20, \"burst_samples\": 40 }
+  { \"interval_secs\": 5, \"bar_width\": 20, \"burst_enabled\": true,
+    \"burst_samples\": 40, \"notify_on_cap\": true, \"statusline_template\": \"…\",
+    \"statusline_colors\": true, \"statusline_ascii\": false }
 
 daily/model/session read ~/.commandcode/projects offline (no API calls).
 Dashboard needs: logged-in Command Code CLI (~/.commandcode/auth.json)"

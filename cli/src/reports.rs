@@ -1,5 +1,7 @@
 use crate::api;
-use cmduse_core::dates::{civil_from_days, day_shift, hour_label, iso_instant, now_secs, parse_iso_utc, tz_offset_suffix};
+use cmduse_core::dates::{
+    civil_from_days, day_shift, hour_label, iso_instant, now_secs, parse_iso_utc, tz_offset_suffix,
+};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 #[derive(Deserialize)]
@@ -45,7 +47,10 @@ pub struct Totals {
 
 impl Totals {
     fn add(&mut self, u: &Usage) {
-        self.merge(&Totals { requests: 1, usage: *u });
+        self.merge(&Totals {
+            requests: 1,
+            usage: *u,
+        });
     }
 
     fn merge(&mut self, o: &Totals) {
@@ -182,6 +187,7 @@ fn date_in_tz(now: i64, tz: i64) -> String {
 fn fetch_pool(sinces: &[String], key: &str) -> Result<Vec<api::UsageSummary>, String> {
     const POOL: usize = 8;
     let mut out = Vec::new();
+    let mut first_err: Option<String> = None;
     for chunk in sinces.chunks(POOL) {
         let handles: Vec<_> = chunk
             .iter()
@@ -191,11 +197,24 @@ fn fetch_pool(sinces: &[String], key: &str) -> Result<Vec<api::UsageSummary>, St
                 std::thread::spawn(move || api::summary_since(&s, &k))
             })
             .collect();
+        // join every handle even after a failure: dropping a JoinHandle
+        // detaches the thread, and watch mode would leak one per bad refresh.
         for h in handles {
-            out.push(h.join().map_err(|_| "usage thread panicked".to_string())??);
+            match h.join() {
+                Ok(Ok(v)) => out.push(v),
+                Ok(Err(e)) => {
+                    first_err.get_or_insert(e);
+                }
+                Err(_) => {
+                    first_err.get_or_insert_with(|| "usage thread panicked".to_string());
+                }
+            }
         }
     }
-    Ok(out)
+    match first_err {
+        Some(e) => Err(e),
+        None => Ok(out),
+    }
 }
 
 /// Account-wide per-day usage for the last `days` days (today included),
@@ -279,7 +298,11 @@ fn hour_bounds(now: u64, hours: usize, tz: i64) -> (Vec<u64>, Vec<u64>) {
 
 /// Account-wide usage for the last `hours` hours, one row per hour bucket
 /// (oldest first, current hour last). Includes all harnesses.
-pub fn load_account_hourly(hours: usize, key: &str, tz: i64) -> Result<Vec<(String, Totals)>, String> {
+pub fn load_account_hourly(
+    hours: usize,
+    key: &str,
+    tz: i64,
+) -> Result<Vec<(String, Totals)>, String> {
     let hours = hours.max(1);
     let (bounds_local, bounds_utc) = hour_bounds(now_secs(), hours, tz);
 
@@ -298,7 +321,9 @@ pub fn load_account_hourly(hours: usize, key: &str, tz: i64) -> Result<Vec<(Stri
                 cums[i].total_count.saturating_sub(next.total_count),
                 (cums[i].total_cost - next.total_cost).max(0.0),
                 cums[i].total_tokens_in.saturating_sub(next.total_tokens_in),
-                cums[i].total_tokens_out.saturating_sub(next.total_tokens_out),
+                cums[i]
+                    .total_tokens_out
+                    .saturating_sub(next.total_tokens_out),
             )
         } else {
             (

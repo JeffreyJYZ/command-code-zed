@@ -36,8 +36,10 @@ pub fn parse_iso_utc(s: &str) -> Option<f64> {
     Some((secs + h * 3600 + mi * 60) as f64 * 1000.0 + sec * 1000.0 - offset_secs as f64 * 1000.0)
 }
 
-/// "+05:00" / "-07:30" → seconds east of UTC. Minutes part optional.
-fn parse_offset(s: &str) -> Option<i64> {
+/// "+05:30" / "-07:30" / "+0530" / "+8" → (sign, hours, minutes). No range
+/// validation — `parse_iso_utc` stays lenient; callers that need bounds
+/// (e.g. the CLI's `--tz`) validate the parts themselves.
+pub fn parse_tz_parts(s: &str) -> Option<(i64, i64, i64)> {
     let rest = s.strip_prefix(['-', '+'])?;
     if rest.is_empty() {
         return None;
@@ -52,6 +54,11 @@ fn parse_offset(s: &str) -> Option<i64> {
         }
         None => (rest.parse::<i64>().ok()?, 0),
     };
+    Some((sign, h, m))
+}
+
+fn parse_offset(s: &str) -> Option<i64> {
+    let (sign, h, m) = parse_tz_parts(s)?;
     Some(sign * (h * 3600 + m * 60))
 }
 
@@ -76,19 +83,6 @@ pub fn now_secs() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
-}
-
-/// today as UTC YYYY-MM-DD
-pub fn today_utc() -> String {
-    civil_from_days(now_secs() as i64 / 86400)
-}
-
-/// hour boundary epoch → "YYYY-MM-DDTHH:00:00.000Z"
-pub fn iso_hour_start(epoch: u64) -> String {
-    let hour_start = epoch - epoch % 3600;
-    let days = hour_start as i64 / 86400;
-    let h = (hour_start % 86400) / 3600;
-    format!("{}T{h:02}:00:00.000Z", civil_from_days(days))
 }
 
 /// exact epoch seconds → "YYYY-MM-DDTHH:MM:SS.000Z" (no hour flooring; use for

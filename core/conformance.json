@@ -64,6 +64,29 @@
 		{ "in": "2026-09-27T19:53:00.000+07:30", "outMs": 1790511780000 },
 		{ "in": "not-a-date", "outMs": null }
 	],
+	"monthlyWindow": [
+		{
+			"cap": 70.0,
+			"remaining": 45.5,
+			"periodStart": "2026-09-01T00:00:00.000Z",
+			"periodEnd": "2026-10-01T00:00:00.000Z",
+			"used": 24.5,
+			"resetAtMs": 1790812800000,
+			"durSecs": 2592000
+		},
+		{ "cap": 70.0, "remaining": 90.0, "periodStart": null, "periodEnd": null, "used": 0.0, "resetAtMs": null, "durSecs": null },
+		{ "cap": 70.0, "remaining": -5.0, "periodStart": null, "periodEnd": null, "used": 70.0, "resetAtMs": null, "durSecs": null },
+		{ "cap": 70.0, "remaining": 45.5, "periodStart": null, "periodEnd": "2026-10-01T00:00:00.000Z", "used": 24.5, "resetAtMs": 1790812800000, "durSecs": null },
+		{
+			"cap": 70.0,
+			"remaining": 45.5,
+			"periodStart": "2026-09-01T00:00:00.000Z",
+			"periodEnd": "2026-09-01T00:00:00.000Z",
+			"used": 24.5,
+			"resetAtMs": 1788220800000,
+			"durSecs": 1
+		}
+	],
 	"plan": [
 		{ "id": "individual-goat", "name": "GOAT", "cap": 70.0 },
 		{ "id": "individual-max-20", "name": "Max 20x", "cap": 300.0 },

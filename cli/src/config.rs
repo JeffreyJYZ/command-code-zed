@@ -22,7 +22,8 @@ impl Default for Config {
             burst_enabled: true,
             burst_samples: 40,
             notify_on_cap: true,
-            statusline_template: "{plan} {credits}/{cap} \u{b7} 5h {5h_bar} \u{b7} wk {wk_bar}".into(),
+            statusline_template: "{plan} {credits}/{cap} \u{b7} 5h {5h_bar} \u{b7} wk {wk_bar}"
+                .into(),
             statusline_colors: true,
             statusline_ascii: false,
         }
@@ -32,9 +33,7 @@ impl Default for Config {
 pub fn config_path() -> PathBuf {
     std::env::var("XDG_CONFIG_HOME")
         .map(|d| PathBuf::from(d).join("cmd-usage/config.json"))
-        .unwrap_or_else(|_| {
-            crate::paths::home().join(".config/cmd-usage/config.json")
-        })
+        .unwrap_or_else(|_| crate::paths::home().join(".config/cmd-usage/config.json"))
 }
 
 pub fn load() -> Config {

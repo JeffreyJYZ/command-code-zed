@@ -46,12 +46,24 @@ fn main() {
             let data_source = if args.local {
                 None
             } else {
-                api::api_key().ok().map(|k| reports::load_account_daily(args.last.unwrap_or(7), &k, args.tz.unwrap_or(0)))
+                api::api_key().ok().map(|k| {
+                    reports::load_account_daily(args.last.unwrap_or(7), &k, args.tz.unwrap_or(0))
+                })
             };
             match data_source {
                 Some(Ok(by_day)) => {
                     let total = reports::sum_days(&by_day);
-                    print!("{}", report_render::table("account", "all harnesses", &by_day, &total, None, args.json));
+                    print!(
+                        "{}",
+                        report_render::table(
+                            "account",
+                            "all harnesses",
+                            &by_day,
+                            &total,
+                            None,
+                            args.json
+                        )
+                    );
                 }
                 Some(Err(e)) => {
                     eprintln!("error: {e}");
@@ -59,7 +71,17 @@ fn main() {
                 }
                 None => {
                     let d = reports::load_local();
-                    print!("{}", report_render::table("local", "offline, ~/.commandcode/projects", &d.by_day, &d.total, args.last, args.json));
+                    print!(
+                        "{}",
+                        report_render::table(
+                            "local",
+                            "offline, ~/.commandcode/projects",
+                            &d.by_day,
+                            &d.total,
+                            args.last,
+                            args.json
+                        )
+                    );
                 }
             }
             return;
@@ -75,7 +97,11 @@ fn main() {
                         std::process::exit(1);
                     }
                 };
-                match reports::load_account_hourly(args.hours.unwrap_or(24), &key, args.tz.unwrap_or(0)) {
+                match reports::load_account_hourly(
+                    args.hours.unwrap_or(24),
+                    &key,
+                    args.tz.unwrap_or(0),
+                ) {
                     Ok(r) => r,
                     Err(e) => {
                         eprintln!("error: {e}");
@@ -86,11 +112,17 @@ fn main() {
             let subtitle = if args.local {
                 "local, CLI sessions".to_string()
             } else if let Some(tz) = args.tz {
-                format!("all harnesses, UTC{}", cmduse_core::dates::tz_offset_suffix(tz))
+                format!(
+                    "all harnesses, UTC{}",
+                    cmduse_core::dates::tz_offset_suffix(tz)
+                )
             } else {
                 "all harnesses, UTC".to_string()
             };
-            print!("{}", report_render::hourly_table(&rows, args.json, &subtitle));
+            print!(
+                "{}",
+                report_render::hourly_table(&rows, args.json, &subtitle)
+            );
             return;
         }
         Some(cli::SubCmd::Model) => {
@@ -125,7 +157,10 @@ fn main() {
     // this run; otherwise it follows the config flag (default off).
     let burst_on = args.bursts.is_some() || cfg.burst_enabled;
     let burst_cap = if burst_on {
-        args.bursts.or(Some(cfg.burst_samples)).unwrap_or(40).clamp(5, 240)
+        args.bursts
+            .or(Some(cfg.burst_samples))
+            .unwrap_or(40)
+            .clamp(5, 240)
     } else {
         0
     };
@@ -165,7 +200,7 @@ fn main() {
     // no disk persistence — a fresh run shows a fresh trend, never old data.
     let mut history: Vec<f64> = Vec::new();
     let mut history_used: Vec<f64> = Vec::new(); // raw cumulative 5h spend
-    // cap-hit notifications: fire once on the rising edge into "exceeded"
+                                                 // cap-hit notifications: fire once on the rising edge into "exceeded"
     let mut was_exceeded_5h = false;
     let mut was_exceeded_wk = false;
     loop {
@@ -198,8 +233,20 @@ fn main() {
             }
         }
         if notify_on_cap {
-            let ex5 = s.credits.window_limits.five_hour.as_ref().map(|w| w.exceeded).unwrap_or(false);
-            let exwk = s.credits.window_limits.weekly.as_ref().map(|w| w.exceeded).unwrap_or(false);
+            let ex5 = s
+                .credits
+                .window_limits
+                .five_hour
+                .as_ref()
+                .map(|w| w.exceeded)
+                .unwrap_or(false);
+            let exwk = s
+                .credits
+                .window_limits
+                .weekly
+                .as_ref()
+                .map(|w| w.exceeded)
+                .unwrap_or(false);
             if ex5 && !was_exceeded_5h {
                 notify_cap("5-hour");
             }
@@ -219,13 +266,15 @@ fn main() {
         let spark = if compact || !burst_on {
             String::new()
         } else if history.len() >= 2 && history.iter().any(|v| *v > 0.0) {
-            format!("{DIM}spend bursts ({}s samples){RESET} {}\n", interval, render::sparkline(&history))
+            format!(
+                "{DIM}spend bursts ({}s samples){RESET} {}\n",
+                interval,
+                render::sparkline(&history)
+            )
         } else {
             String::new() // idle (all-zero deltas) → no row, no flat-line noise
         };
-        let status_line = format!(
-            "{DIM}refreshing every {interval}s · ctrl-c to quit{RESET}"
-        );
+        let status_line = format!("{DIM}refreshing every {interval}s · ctrl-c to quit{RESET}");
         let frame = format!("{text}{spark}{status_line}");
         prev_lines = redraw_frame(&mut out, &frame, prev_lines, (cols > 0).then_some(cols));
         out.flush().ok();
@@ -255,9 +304,15 @@ fn notify_cap(window: &str) {
                 body.replace('\\', "\\\\").replace('"', "\\\""),
                 title
             );
-            let _ = std::process::Command::new("osascript").arg("-e").arg(script).status();
+            let _ = std::process::Command::new("osascript")
+                .arg("-e")
+                .arg(script)
+                .status();
         } else if cfg!(target_os = "linux") {
-            let _ = std::process::Command::new("notify-send").arg(title).arg(&body).status();
+            let _ = std::process::Command::new("notify-send")
+                .arg(title)
+                .arg(&body)
+                .status();
         }
     });
 }
@@ -289,7 +344,10 @@ fn compact_dashboard(s: &crate::render::Snapshot, history: &[f64]) -> String {
     } else {
         String::new()
     };
-    format!("{BOLD}{}{RESET} {rem_txt}/{cap_txt} · 5h {h5}{status}{spark}\n", plan_name(&s.sub.plan_id))
+    format!(
+        "{BOLD}{}{RESET} {rem_txt}/{cap_txt} · 5h {h5}{status}{spark}\n",
+        plan_name(&s.sub.plan_id)
+    )
 }
 
 /// Terminal (rows, cols) from `stty size`. None when not a tty or the probe
@@ -505,7 +563,10 @@ fn plans_cmd(args: &cli::Args) {
         print!("{}", render::plans_json(&current));
     } else {
         use std::io::IsTerminal;
-        print!("{}", render::plans_table(&current, std::io::stdout().is_terminal()));
+        print!(
+            "{}",
+            render::plans_table(&current, std::io::stdout().is_terminal())
+        );
     }
 }
 
@@ -520,7 +581,10 @@ fn statusline_cmd(args: &cli::Args) {
     }
     if args.json {
         let w = |o: &Option<api::Window>| -> (f64, f64) {
-            (o.as_ref().map(|w| w.used).unwrap_or(0.0), o.as_ref().map(|w| w.cap).unwrap_or(0.0))
+            (
+                o.as_ref().map(|w| w.used).unwrap_or(0.0),
+                o.as_ref().map(|w| w.cap).unwrap_or(0.0),
+            )
         };
         let (h5u, h5c) = w(&s.credits.window_limits.five_hour);
         let (wku, wkc) = w(&s.credits.window_limits.weekly);
@@ -553,9 +617,15 @@ fn statusline_cmd(args: &cli::Args) {
     let eta_of = |w: &Option<api::Window>, dur: u64| -> Option<String> {
         let w = w.as_ref()?;
         let secs = cmduse_core::pace_eta(w.reset_at, dur, w.used, w.cap, now)?;
-        Some(format!("on pace to hit cap in {}", cmduse_core::rel_time(Some(secs * 1000.0), Some(now))))
+        Some(format!(
+            "on pace to hit cap in {}",
+            cmduse_core::rel_time(Some(secs * 1000.0), Some(now))
+        ))
     };
-    let h5_eta = eta_of(&s.credits.window_limits.five_hour, cmduse_core::FIVE_HOUR_SECS);
+    let h5_eta = eta_of(
+        &s.credits.window_limits.five_hour,
+        cmduse_core::FIVE_HOUR_SECS,
+    );
     let wk_eta = eta_of(&s.credits.window_limits.weekly, cmduse_core::WEEKLY_SECS);
     let d = report_render::StatusData {
         plan,
@@ -569,5 +639,8 @@ fn statusline_cmd(args: &cli::Args) {
         colors: cfg.statusline_colors,
         ascii: cfg.statusline_ascii,
     };
-    print!("{}", report_render::render_statusline(&cfg.statusline_template, &d));
+    print!(
+        "{}",
+        report_render::render_statusline(&cfg.statusline_template, &d)
+    );
 }

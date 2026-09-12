@@ -2,7 +2,11 @@ use super::config::{set, Config};
 use crate::cli::ConfigSet;
 
 fn cs(interval: Option<u64>, width: Option<usize>) -> ConfigSet {
-    ConfigSet { interval, width, ..Default::default() }
+    ConfigSet {
+        interval,
+        width,
+        ..Default::default()
+    }
 }
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
@@ -36,7 +40,8 @@ fn config_parse_partial_uses_defaults() {
     assert_eq!(c.interval_secs, 30);
     assert_eq!(c.bar_width, 20); // serde(default) fills
     assert!(c.burst_enabled);
-    let c: Config = serde_json::from_str(r#"{"burst_enabled": false, "burst_samples": 20}"#).unwrap();
+    let c: Config =
+        serde_json::from_str(r#"{"burst_enabled": false, "burst_samples": 20}"#).unwrap();
     assert!(!c.burst_enabled);
     assert_eq!(c.burst_samples, 20);
     assert_eq!(c.interval_secs, 5);
@@ -68,7 +73,12 @@ fn config_set_validates_and_persists() {
     assert_eq!(c.bar_width, 30);
 
     // burst toggle off keeps samples; notify toggle off persists
-    set(&ConfigSet { burst_on: Some(false), notify: Some(false), ..Default::default() }).unwrap();
+    set(&ConfigSet {
+        burst_on: Some(false),
+        notify: Some(false),
+        ..Default::default()
+    })
+    .unwrap();
     let c: Config = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     assert!(!c.burst_enabled);
     assert!(!c.notify_on_cap);
@@ -78,8 +88,16 @@ fn config_set_validates_and_persists() {
     assert!(set(&cs(Some(86_401), None)).is_err());
     assert!(set(&cs(None, Some(4))).is_err()); // < 5
     assert!(set(&cs(None, Some(201))).is_err()); // > 200
-    assert!(set(&ConfigSet { bursts: Some(3), ..Default::default() }).is_err()); // < 5
-    assert!(set(&ConfigSet { bursts: Some(241), ..Default::default() }).is_err()); // > 240
+    assert!(set(&ConfigSet {
+        bursts: Some(3),
+        ..Default::default()
+    })
+    .is_err()); // < 5
+    assert!(set(&ConfigSet {
+        bursts: Some(241),
+        ..Default::default()
+    })
+    .is_err()); // > 240
     assert!(set(&ConfigSet::default()).is_err()); // nothing to set
 
     // file unchanged after failed set

@@ -1,5 +1,5 @@
 use super::render::*;
-use crate::render::{Snapshot};
+use crate::render::Snapshot;
 
 // Plan-name/cap, money, compact, rel_time, and ISO cases are covered by the
 // shared conformance vectors in core (conformance.json) — only presentation
@@ -44,7 +44,12 @@ fn window_line_includes_elapsed_and_flag() {
     assert!(line.contains("$5.00 / $10.00"));
     assert!(line.contains("resets in"));
 
-    let w_exceeded = Window { used: 15.0, cap: 10.0, exceeded: true, reset_at: None };
+    let w_exceeded = Window {
+        used: 15.0,
+        cap: 10.0,
+        exceeded: true,
+        reset_at: None,
+    };
     let line = window_line("Weekly", &w_exceeded, now, 20, Some(7 * 86400));
     assert!(line.contains("LIMIT EXCEEDED"));
 
@@ -68,7 +73,10 @@ fn pace_warns_only_after_10pct_elapsed() {
         reset_at: Some((start5 + d) as f64 * 1000.0),
     };
     let line = window_line("5-hour", &w_early, now, 20, Some(d));
-    assert!(!line.contains("on pace"), "must not warn at 5% elapsed: {line}");
+    assert!(
+        !line.contains("on pace"),
+        "must not warn at 5% elapsed: {line}"
+    );
 
     // 10% elapsed, same spend rate → pace warning shown.
     let start10 = now - d / 10;
@@ -89,7 +97,14 @@ fn pace_warns_only_after_10pct_elapsed() {
 fn plans_table_marks_current_by_exact_name() {
     let out = plans_table("individual-goat", false);
     assert!(out.contains("*GOAT"));
-    assert!(!out.contains("*Go "), "substring 'go' must not mark Go: {out}");
+    assert!(
+        !out.contains("*Go "),
+        "substring 'go' must not mark Go: {out}"
+    );
+    assert!(
+        !out.contains('\x1b'),
+        "colors=false must emit no ANSI: {out:?}"
+    );
     let out = plans_table("unknown-plan", false);
     assert!(!out.contains('*'), "no current plan → no mark: {out}");
     // colors=true bolds the current row
@@ -296,7 +311,10 @@ fn statusline_templates() {
         colors: false,
         ascii: false,
     };
-    assert_eq!(render_statusline("{5h_eta}|{wk_eta}", &deta), "on pace to hit cap in 1h 2m|");
+    assert_eq!(
+        render_statusline("{5h_eta}|{wk_eta}", &deta),
+        "on pace to hit cap in 1h 2m|"
+    );
 
     // zero-cap plan: bars show 0%, no divide-by-zero
     let h5z: Option<(f64, f64)> = None;
@@ -330,9 +348,9 @@ fn sparkline_small_deltas_visible() {
 fn sparkline_shapes() {
     // flat → all lowest bar
     assert_eq!(sparkline(&[1.0, 1.0, 1.0]), "███"); // flat values scale to full-height max
-    // rising trend
+                                                    // rising trend
     assert_eq!(sparkline(&[0.0, 5.0, 10.0]), "▁▅█"); // 0/10→▁, 5/10→mid, 10/10→full
-    // fewer than 2 points → empty
+                                                     // fewer than 2 points → empty
     assert_eq!(sparkline(&[]), "");
     assert_eq!(sparkline(&[5.0]), "");
     // all zeros → all low bars, no NaN panic

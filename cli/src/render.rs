@@ -20,7 +20,11 @@ pub fn color_for(pct: f64) -> &'static str {
 }
 
 pub fn bar(used: f64, cap: f64, width: usize) -> String {
-    let pct = if cap > 0.0 { (used / cap).clamp(0.0, 1.0) } else { 0.0 };
+    let pct = if cap > 0.0 {
+        (used / cap).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
     let filled = (pct * width as f64).round() as usize;
     let pct_val = pct * 100.0;
     format!(
@@ -44,7 +48,7 @@ pub fn plans_table(current_plan_id: &str, colors: bool) -> String {
     let mine = plan_name(current_plan_id);
     let (hl, rst) = if colors { (BOLD, RESET) } else { ("", "") };
     let mut o = format!(
-        "{BOLD}{:<10} {:>8} {:>11} {:>8} {:>8}{RESET}\n",
+        "{hl}{:<10} {:>8} {:>11} {:>8} {:>8}{rst}\n",
         "Plan", "Price", "Credits/mo", "5-hour", "Weekly"
     );
     for &(name, price, monthly, h5, wk) in PLANS {
@@ -121,9 +125,6 @@ pub fn render_json(s: &Snapshot) -> String {
     .to_string()
 }
 
-/// date/ISO helpers live in cmduse-core; re-export here (tests + render use it)
-pub use cmduse_core::parse_iso_utc;
-
 /// Elapsed % of a rolling window: window length = dur_secs, ends at reset_at.
 pub fn elapsed_pct(reset_at: Option<f64>, dur_secs: u64, now: u64) -> Option<u8> {
     cmduse_core::elapsed_pct(reset_at, dur_secs, Some(now))
@@ -136,7 +137,11 @@ pub fn window_line(
     bar_width: usize,
     dur_secs: Option<u64>,
 ) -> String {
-    let flag = if w.exceeded { format!(" {RED}{BOLD}LIMIT EXCEEDED{RESET}") } else { String::new() };
+    let flag = if w.exceeded {
+        format!(" {RED}{BOLD}LIMIT EXCEEDED{RESET}")
+    } else {
+        String::new()
+    };
     let thru = dur_secs
         .and_then(|d| elapsed_pct(w.reset_at, d, now))
         .map(|p| format!(" · {DIM}window {p}% elapsed{RESET}"))
@@ -216,27 +221,35 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
     // reset_at is the subscription period end parsed by cmduse-core, which
     // honors an explicit +HH:MM offset when present and reads UTC otherwise.
     if let Some(cap) = monthly_cap {
-        let used = (cap - s.credits.credits.monthly_credits).clamp(0.0, cap);
-        let reset_at = s.sub.current_period_end.as_ref().and_then(|e| parse_iso_utc(e));
-        let dur = match (&s.sub.current_period_start, &s.sub.current_period_end) {
-            (Some(st), Some(en)) => parse_iso_utc(st)
-                .zip(parse_iso_utc(en))
-                .map(|(a, b)| ((b - a) as u64 / 1000).max(1)),
-            _ => None,
-        };
-        o.push_str(&window_line("Monthly", &crate::api::Window {
-            used,
+        let (w, dur) = cmduse_core::monthly_window(
             cap,
-            exceeded: false,
-            reset_at,
-        }, s.now, bar_width, dur));
+            s.credits.credits.monthly_credits,
+            s.sub.current_period_start.as_deref(),
+            s.sub.current_period_end.as_deref(),
+        );
+        o.push_str(&window_line("Monthly", &w, s.now, bar_width, dur));
         o.push('\n');
     }
-    match (&s.credits.window_limits.five_hour, &s.credits.window_limits.weekly) {
+    match (
+        &s.credits.window_limits.five_hour,
+        &s.credits.window_limits.weekly,
+    ) {
         (Some(h5), Some(wk)) => {
-            o.push_str(&window_line("5-hour", h5, s.now, bar_width, Some(cmduse_core::FIVE_HOUR_SECS)));
+            o.push_str(&window_line(
+                "5-hour",
+                h5,
+                s.now,
+                bar_width,
+                Some(cmduse_core::FIVE_HOUR_SECS),
+            ));
             o.push('\n');
-            o.push_str(&window_line("Weekly", wk, s.now, bar_width, Some(cmduse_core::WEEKLY_SECS)));
+            o.push_str(&window_line(
+                "Weekly",
+                wk,
+                s.now,
+                bar_width,
+                Some(cmduse_core::WEEKLY_SECS),
+            ));
             o.push('\n');
         }
         (None, None) => {
@@ -244,11 +257,23 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
         }
         (h5, wk) => {
             if let Some(w) = h5 {
-                o.push_str(&window_line("5-hour", w, s.now, bar_width, Some(cmduse_core::FIVE_HOUR_SECS)));
+                o.push_str(&window_line(
+                    "5-hour",
+                    w,
+                    s.now,
+                    bar_width,
+                    Some(cmduse_core::FIVE_HOUR_SECS),
+                ));
                 o.push('\n');
             }
             if let Some(w) = wk {
-                o.push_str(&window_line("Weekly", w, s.now, bar_width, Some(cmduse_core::WEEKLY_SECS)));
+                o.push_str(&window_line(
+                    "Weekly",
+                    w,
+                    s.now,
+                    bar_width,
+                    Some(cmduse_core::WEEKLY_SECS),
+                ));
                 o.push('\n');
             }
         }
@@ -284,7 +309,11 @@ pub fn render_plain(s: &Snapshot) -> String {
     if let Some(w) = &s.credits.window_limits.five_hour {
         o.push_str(&format!(
             "5-hour: {:.0}% ({} / {}) · resets in {}\n",
-            if w.cap > 0.0 { w.used / w.cap * 100.0 } else { 0.0 },
+            if w.cap > 0.0 {
+                w.used / w.cap * 100.0
+            } else {
+                0.0
+            },
             money(w.used),
             money(w.cap),
             rel_time(w.reset_at, s.now),
@@ -293,7 +322,11 @@ pub fn render_plain(s: &Snapshot) -> String {
     if let Some(w) = &s.credits.window_limits.weekly {
         o.push_str(&format!(
             "Weekly: {:.0}% ({} / {}) · resets in {}\n",
-            if w.cap > 0.0 { w.used / w.cap * 100.0 } else { 0.0 },
+            if w.cap > 0.0 {
+                w.used / w.cap * 100.0
+            } else {
+                0.0
+            },
             money(w.used),
             money(w.cap),
             rel_time(w.reset_at, s.now),

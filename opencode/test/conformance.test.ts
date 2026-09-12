@@ -6,6 +6,7 @@ import {
 	compact,
 	duration,
 	elapsedPct,
+	monthlyWindow,
 	money,
 	paceEta,
 	parseIsoUtc,
@@ -92,6 +93,28 @@ describe("conformance vectors (shared with cmduse-core)", () => {
 		for (const c of conformance.parseIso as IsoCase[]) {
 			const got = parseIsoUtc(c.in);
 			expect([c.in, got ?? null]).toEqual([c.in, c.outMs]);
+		}
+	});
+	test("monthlyWindow", () => {
+		type MonthlyCase = {
+			cap: number;
+			remaining: number;
+			periodStart: string | null;
+			periodEnd: string | null;
+			used: number;
+			resetAtMs: number | null;
+			durSecs: number | null;
+		};
+		for (const c of conformance.monthlyWindow as MonthlyCase[]) {
+			const { window, durSecs } = monthlyWindow(
+				c.cap,
+				c.remaining,
+				c.periodStart ?? undefined,
+				c.periodEnd ?? undefined,
+			);
+			expect([c.cap, window.used]).toEqual([c.cap, c.used]);
+			expect([c.periodEnd, window.resetAt ?? null]).toEqual([c.periodEnd, c.resetAtMs]);
+			expect([c.periodStart, durSecs ?? null]).toEqual([c.periodStart, c.durSecs]);
 		}
 	});
 	test("plan name + cap", () => {

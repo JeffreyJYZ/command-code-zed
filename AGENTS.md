@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Workspace: cmduse-core + cmd-usage CLI + Zed extension + opencode plugin,
-single source of shared logic. Release line 0.6.3 (0.2–0.4 slots are
+single source of shared logic. Release line 0.6.4 (0.2–0.4 slots are
 yanked-forever on crates.io from the old crate).
 
 ## Layout
@@ -16,11 +16,12 @@ core/              cmduse-core: shared pure logic, single source of truth
                    PLANS/GATE_* consts
   src/lib.rs       plan_name, plan_monthly_cap, money, compact, pct, duration,
                    rel_time, elapsed_pct, pace_eta (10% gate lives here),
+                   monthly_window (cap−remaining clamp + period duration),
                    gate/gate_allowed, bare_model + canonical_model
                    (provider/alias normalization, mirror
                    opencode/src/{access,gating}.ts)
-  src/dates.rs     ISO/UTC date helpers (parse_iso_utc, civil_from_days,
-                   iso_hour_start, iso_instant, now_secs, …)
+  src/dates.rs     ISO/UTC date helpers (parse_iso_utc, parse_tz_parts,
+                   civil_from_days, iso_instant, now_secs, …)
   src/wire.rs      API wire DTOs shared by CLI + Zed (Credits/Window/SubData/…)
 cli/               cmd-usage (bin `cmduse`), published to crates.io
   src/…            thin UI: api client, snapshot, ANSI rendering, reports, redraw
@@ -46,7 +47,7 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (no core crate;
 - **Behavior vectors live in `core/conformance.json`.** Rust (`core` test) and
   TS (`opencode/test/conformance.test.ts`) both run it, so the two language
   ports of money/compact/pct/duration/rel_time/parse_iso_utc/elapsed_pct/
-  pace_eta/plan_*/gating/bare_model/canonicalize can't drift.
+  pace_eta/monthly_window/plan_*/gating/bare_model/canonicalize can't drift.
 - `core` keeps adapters out: cli wraps `rel_time`/`elapsed_pct` to its
   `u64`-now signatures; zed-ext uses core's `Option<u64>` forms directly.
 - Window caps (5-hour/weekly) come from the API `Window.cap` response, NOT
@@ -66,11 +67,11 @@ cd opencode && bun test && bun run typecheck
 ## Publishing (NEVER without explicit user go)
 
 - Order matters: `cmduse-core` first, then `cmd-usage`. `cli/Cargo.toml` dep
-  is `{ path = "../core", version = "0.6.3" }` — path resolves locally, the
+  is `{ path = "../core", version = "0.6.4" }` — path resolves locally, the
   `version` must already exist on crates.io for `cmd-usage` publish to work.
 - **crates.io version slots are FOREVER.** 0.2.0–0.4.0 were published+yanked
   on old `cmd-usage` — you can never re-upload those numbers. Current 0.x
-  release line is 0.6.3 (first free slot past the dead 0.2–0.4 range). Skip
+  release line is 0.6.4 (first free slot past the dead 0.2–0.4 range). Skip
   taken numbers, never fight the 400.
 - Clean tree required (commit first, incl. Cargo.lock). Zed ext has NO
   release channel (local dev-install only).
@@ -79,7 +80,7 @@ cd opencode && bun test && bun run typecheck
   (`curl -sL https://static.crates.io/crates/cmd-usage/cmd-usage-<v>.crate | shasum -a 256`).
 - README/AGENTS updated in the same commit.
 - The opencode npm package (`opencode/package.json`) is versioned
-  **independently** of the Rust workspace (0.1.4 vs 0.6.3) — intentional, not
+  **independently** of the Rust workspace (0.1.x vs 0.6.4) — intentional, not
   drift. Don't sync them.
 
 ## Learned-the-hard-way
@@ -92,8 +93,8 @@ cli/src/main_tests.rs). Zed wasm: crate builds for `wasm32-wasip1`;
 `--tz` offsets are **east-positive seconds** (`parse_tz("+05:30")=+19800`),
 matching `tz_offset_suffix`; local = UTC + tz. All day/hour bucketing must use
 that sign — a flipped `now - tz` silently shifts every local bucket (fixed in
-0.6.2). Route exact local hour boundaries through `dates::iso_instant`, not
-`iso_hour_start` (the latter floors to a UTC hour and breaks minute offsets).
+0.6.2). Route exact local hour boundaries through `dates::iso_instant` — do NOT
+floor to a UTC hour, that breaks minute-bearing offsets like +05:30.
 `pace_eta` returns **seconds** (a duration); format it with `core::duration`,
 never `rel_time` — the latter expects an absolute reset epoch and renders any
 small duration as "resetting…" (bug shipped in cli + zed until 0.6.2).

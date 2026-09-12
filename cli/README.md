@@ -113,13 +113,16 @@ status() { cmduse statusline 2>/dev/null; }
 {
   "interval_secs": 5,
   "bar_width": 20,
+  "burst_enabled": true,
+  "burst_samples": 40,
+  "notify_on_cap": true,
   "statusline_template": "{plan} {credits}/{cap} · 5h {5h_bar} · wk {wk_bar}",
   "statusline_colors": true,
   "statusline_ascii": false
 }
 ```
 
-CLI flags override config. `cmduse config set interval=<s> width=<n> sl=<tpl> sl_colors=<bool> sl_ascii=<bool>`.
+CLI flags override config. `cmduse config set interval=<s> width=<n> burst_on=<bool> burst=<n> notify=<bool> sl=<tpl> sl_colors=<bool> sl_ascii=<bool>`.
 
 ## Data sources
 

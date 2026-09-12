@@ -1,8 +1,6 @@
-use serde::{Deserialize, Serialize};
 use cmduse_core::SubscriptionsResp;
-pub use cmduse_core::{
-    Credits, CreditsResp, SubData, UsageSummary, Window, WindowLimits,
-};
+pub use cmduse_core::{Credits, CreditsResp, SubData, UsageSummary, Window, WindowLimits};
+use serde::{Deserialize, Serialize};
 
 const API_BASE: &str = "https://api.commandcode.ai";
 
@@ -36,6 +34,7 @@ fn get(path: &str, key: &str) -> Result<Vec<u8>, String> {
             .timeout(std::time::Duration::from_secs(15))
             .call();
 
+        let mut retry_after: Option<u64> = None;
         match resp {
             Ok(resp) => {
                 const MAX_BODY: u64 = 10 * 1024 * 1024;
@@ -44,7 +43,8 @@ fn get(path: &str, key: &str) -> Result<Vec<u8>, String> {
                     // hitting the cap means the body was truncated and will
                     // never parse — fail loudly instead of retrying a huge body
                     Ok(n) if n as u64 == MAX_BODY => {
-                        last_err = format!("{path}: response exceeds {} MiB", MAX_BODY / 1024 / 1024);
+                        last_err =
+                            format!("{path}: response exceeds {} MiB", MAX_BODY / 1024 / 1024);
                         break;
                     }
                     Ok(_) => return Ok(buf),
@@ -56,7 +56,19 @@ fn get(path: &str, key: &str) -> Result<Vec<u8>, String> {
                 // Transport = network/TLS/socket blip (always retry); Status =
                 // 429/5xx retry, other 4xx client errors are fatal.
                 let is_transient = match &e {
-                    ureq::Error::Status(code, _) => *code == 429 || (500..600).contains(code),
+                    ureq::Error::Status(code, resp) => {
+                        // honor a numeric Retry-After (seconds); capped so a
+                        // hostile/huge value can't stall the watch loop for long.
+                        // ponytail: HTTP-date form ignored — servers use seconds
+                        // for 429. upgrade: parse the date form if one shows up.
+                        if *code == 429 {
+                            retry_after = resp
+                                .header("Retry-After")
+                                .and_then(|v| v.trim().parse::<u64>().ok())
+                                .map(|s| s.min(60));
+                        }
+                        *code == 429 || (500..600).contains(code)
+                    }
                     ureq::Error::Transport(_) => true,
                 };
                 if !is_transient || attempt == MAX_RETRIES {
@@ -66,7 +78,8 @@ fn get(path: &str, key: &str) -> Result<Vec<u8>, String> {
         }
 
         if attempt < MAX_RETRIES {
-            let delay = std::cmp::min(BASE_DELAY_MS * (1u64 << attempt), MAX_DELAY_MS);
+            let backoff = std::cmp::min(BASE_DELAY_MS * (1u64 << attempt), MAX_DELAY_MS);
+            let delay = retry_after.map_or(backoff, |s| s * 1000);
             // jitter de-syncs retries from other clients; subsec nanos is plenty
             let jitter = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -92,8 +105,7 @@ pub fn credits(key: &str) -> Result<CreditsResp, String> {
 }
 
 pub fn summary(key: &str) -> Result<UsageSummary, String> {
-    serde_json::from_slice(&get("/alpha/usage/summary", key)?)
-        .map_err(|e| format!("summary: {e}"))
+    serde_json::from_slice(&get("/alpha/usage/summary", key)?).map_err(|e| format!("summary: {e}"))
 }
 
 /// Fetch `/alpha/usage/summary?since=<ISO>` and return parsed summary.

@@ -126,6 +126,25 @@ export function parseIsoUtc(s: string): number | undefined {
 	return Date.UTC(+y, +mo - 1, +d, +h, +mi, Math.floor(+sec)) - offsetMs;
 }
 
+/** Assemble the monthly window from the plan cap + subscription period:
+ * used = cap − remaining (clamped), reset = period end, durSecs = period
+ * length. Mirrors cmduse_core::monthly_window (conformance-pinned). */
+export function monthlyWindow(
+	cap: number,
+	remaining: number,
+	periodStart?: string,
+	periodEnd?: string,
+): { window: { used: number; cap: number; resetAt?: number }; durSecs?: number } {
+	const used = Math.min(Math.max(cap - remaining, 0), cap);
+	const resetAt = periodEnd ? parseIsoUtc(periodEnd) : undefined;
+	const start = periodStart ? parseIsoUtc(periodStart) : undefined;
+	const durSecs =
+		start !== undefined && resetAt !== undefined
+			? Math.max(Math.floor((resetAt - start) / 1000), 1)
+			: undefined;
+	return { window: { used, cap, resetAt }, durSecs };
+}
+
 const NAME_RULES = plansData.nameRules as Array<{ needles: string[]; name: string }>;
 const DEFAULT_NAME = plansData.defaultName as string;
 const CAPS = plansData.caps as Record<string, number | null>;
@@ -204,14 +223,13 @@ export async function renderUsage(key: string): Promise<string> {
 
 	lines.push("### Usage windows");
 	if (cap) {
-		const used = Math.min(Math.max(cap - cr.credits.monthlyCredits, 0), cap);
-		const resetAt = sub.currentPeriodEnd ? parseIsoUtc(sub.currentPeriodEnd) : undefined;
-		const start = sub.currentPeriodStart ? parseIsoUtc(sub.currentPeriodStart) : undefined;
-		const dur =
-			start !== undefined && resetAt !== undefined
-				? Math.max(Math.floor((resetAt - start) / 1000), 1)
-				: undefined;
-		lines.push(windowLine("Monthly", { used, cap, resetAt }, nowSecs, dur));
+		const { window, durSecs } = monthlyWindow(
+			cap,
+			cr.credits.monthlyCredits,
+			sub.currentPeriodStart,
+			sub.currentPeriodEnd,
+		);
+		lines.push(windowLine("Monthly", { ...window, exceeded: false }, nowSecs, durSecs));
 	}
 	const five = cr.windowLimits?.fiveHour;
 	const weekly = cr.windowLimits?.weekly;

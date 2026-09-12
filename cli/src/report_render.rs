@@ -1,10 +1,14 @@
-use crate::render::{color_for, BOLD, compact, CYAN, DIM, money, RESET};
+use crate::render::{color_for, compact, money, BOLD, CYAN, DIM, RESET};
 
 pub fn bar(pct: f64, width: usize, ascii: bool, colors: bool) -> String {
     let filled = ((pct / 100.0).clamp(0.0, 1.0) * width as f64).round() as usize;
     let (full, empty) = if ascii { ("#", "-") } else { ("━", "╱") };
     if !colors {
-        return format!("{pct:>5.1}% {}{}", full.repeat(filled), empty.repeat(width - filled));
+        return format!(
+            "{pct:>5.1}% {}{}",
+            full.repeat(filled),
+            empty.repeat(width - filled)
+        );
     }
     let color = color_for(pct);
     format!(
@@ -128,9 +132,7 @@ fn totals_map<'a, I>(items: I) -> serde_json::Map<String, serde_json::Value>
 where
     I: Iterator<Item = (&'a String, &'a crate::reports::Totals)>,
 {
-    items
-        .map(|(k, t)| (k.clone(), totals_json(t)))
-        .collect()
+    items.map(|(k, t)| (k.clone(), totals_json(t))).collect()
 }
 
 fn table_header() -> String {
@@ -154,7 +156,14 @@ fn table_row(day: &str, t: &crate::reports::Totals, dim: bool) -> String {
 }
 
 /// Daily usage table (local or account scope). JSON key and heading differ.
-pub fn table(scope: &str, subtitle: &str, by_day: &crate::reports::ByDay, total: &crate::reports::Totals, days: Option<usize>, json: bool) -> String {
+pub fn table(
+    scope: &str,
+    subtitle: &str,
+    by_day: &crate::reports::ByDay,
+    total: &crate::reports::Totals,
+    days: Option<usize>,
+    json: bool,
+) -> String {
     if json {
         return serde_json::json!({
             "scope": scope,
@@ -165,7 +174,11 @@ pub fn table(scope: &str, subtitle: &str, by_day: &crate::reports::ByDay, total:
     }
     let mut o = format!(
         "{BOLD}{}{RESET} {DIM}({subtitle}){RESET}\n\n",
-        if scope == "account" { "Account usage" } else { "Local usage" }
+        if scope == "account" {
+            "Account usage"
+        } else {
+            "Local usage"
+        }
     );
     o.push_str(&table_header());
     let day_count = by_day.len();
@@ -187,9 +200,7 @@ pub fn hourly_table(rows: &[(String, crate::reports::Totals)], json: bool, sourc
         })
         .to_string();
     }
-    let mut o = format!(
-        "{BOLD}Usage by hour{RESET} {DIM}({source}){RESET}\n\n"
-    );
+    let mut o = format!("{BOLD}Usage by hour{RESET} {DIM}({source}){RESET}\n\n");
     o.push_str(&format!(
         " {BOLD}{:<14}{RESET} {:>6} {:>10} {:>10} {:>10}\n",
         "Hour", "Reqs", "In", "Out", "Cost"
@@ -242,7 +253,10 @@ pub fn model_table(by_model: &crate::reports::ByModel, json: bool) -> String {
     for (m, t) in by_model {
         let tokens = t.usage.input_tokens + t.usage.output_tokens + t.usage.cache_read_tokens;
         let share = if total_cost > 0.0 {
-            format!(" {DIM}{:>5.1}%{RESET}", t.usage.cost_usd / total_cost * 100.0)
+            format!(
+                " {DIM}{:>5.1}%{RESET}",
+                t.usage.cost_usd / total_cost * 100.0
+            )
         } else {
             String::new()
         };
@@ -267,7 +281,10 @@ mod tests {
         let mut by: ByProject = ByProject::new();
         let t = Totals {
             requests: 1,
-            usage: Usage { cost_usd: 0.5, ..Default::default() },
+            usage: Usage {
+                cost_usd: 0.5,
+                ..Default::default()
+            },
         };
         by.insert("we\"ird\\name".into(), t);
         let out = project_table(&by, true);

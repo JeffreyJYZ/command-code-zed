@@ -1,4 +1,11 @@
-use super::cli::{parse_duration, parse_tz, usage_text};
+use super::cli::{parse_args_from, parse_duration, parse_tz, usage_text, SubCmd};
+
+fn argv(args: &[&str]) -> Vec<std::ffi::OsString> {
+    // lexopt::from_iter wants the binary name first, like env::args_os.
+    std::iter::once(std::ffi::OsString::from("cmduse"))
+        .chain(args.iter().map(std::ffi::OsString::from))
+        .collect()
+}
 
 #[test]
 fn duration_suffixes() {
@@ -25,9 +32,41 @@ fn tz_offsets() {
 }
 
 #[test]
+fn parses_flags_all_forms() {
+    let a = parse_args_from(argv(&["-1", "-i", "30s", "--tz", "+05:30", "--json"])).unwrap();
+    assert!(a.once);
+    assert_eq!(a.interval, Some(30));
+    assert_eq!(a.tz, Some(19_800));
+    assert!(a.json);
+    // --key=value and attached short value both work through lexopt
+    let a = parse_args_from(argv(&["--interval=5m", "-w40"])).unwrap();
+    assert_eq!(a.interval, Some(300));
+    assert_eq!(a.bar_width, Some(40));
+    let a = parse_args_from(argv(&["daily", "--days", "3"])).unwrap();
+    assert_eq!(a.subcmd, Some(SubCmd::Daily));
+    assert_eq!(a.last, Some(3));
+}
+
+#[test]
+fn parses_config_set() {
+    let a = parse_args_from(argv(&["config", "set", "interval=10", "sl_colors=false"])).unwrap();
+    let cs = a.config_set.unwrap();
+    assert_eq!(cs.interval, Some(10));
+    assert_eq!(cs.sl_colors, Some(false));
+}
+
+#[test]
+fn rejects_bad_input() {
+    assert!(parse_args_from(argv(&["-1", "-W"])).is_err());
+    assert!(parse_args_from(argv(&["--tz", "junk"])).is_err());
+    assert!(parse_args_from(argv(&["-w", "3"])).is_err());
+    assert!(parse_args_from(argv(&["config", "set", "width=abc"])).is_err());
+    assert!(parse_args_from(argv(&["bogus"])).is_err());
+}
+
+#[test]
 fn parse_flags() {
-    // can't call parse_args (reads std::env::args), so test via usage text presence
-    // and keep parse logic covered by integration runs. Sanity-check usage text:
+    // usage text stays in sync with the parser's flags
     let u = usage_text();
     assert!(u.contains("--once"));
     assert!(u.contains("--interval"));

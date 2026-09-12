@@ -37,6 +37,35 @@ pub fn money(v: f64) -> String {
 pub const FIVE_HOUR_SECS: u64 = 5 * 3600;
 pub const WEEKLY_SECS: u64 = 7 * 86400;
 
+/// Assemble the monthly usage window from the plan cap and subscription
+/// period: used = cap − remaining (clamped to [0, cap]), reset = period end,
+/// duration = period length. Returns (window, duration secs). Single source
+/// for cli + zed; the opencode TS port mirrors it via conformance vectors.
+pub fn monthly_window(
+    cap: f64,
+    remaining: f64,
+    period_start: Option<&str>,
+    period_end: Option<&str>,
+) -> (Window, Option<u64>) {
+    let used = (cap - remaining).clamp(0.0, cap);
+    let reset_at = period_end.and_then(parse_iso_utc);
+    let dur = match (period_start, period_end) {
+        (Some(st), Some(en)) => parse_iso_utc(st)
+            .zip(parse_iso_utc(en))
+            .map(|(a, b)| ((b - a) as u64 / 1000).max(1)),
+        _ => None,
+    };
+    (
+        Window {
+            used,
+            cap,
+            exceeded: false,
+            reset_at,
+        },
+        dur,
+    )
+}
+
 pub fn compact(n: u64) -> String {
     if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)
@@ -179,7 +208,10 @@ pub fn canonical_model(model: &str) -> String {
 /// of a known model inherits its category; otherwise None).
 fn model_category(model: &str) -> Option<&'static str> {
     let lower = canonical_model(model).to_lowercase();
-    if let Some((_, c)) = GATE_CATEGORIES.iter().find(|(m, _)| m.to_lowercase() == lower) {
+    if let Some((_, c)) = GATE_CATEGORIES
+        .iter()
+        .find(|(m, _)| m.to_lowercase() == lower)
+    {
         return Some(c);
     }
     let mut best: Option<(&str, &str)> = None;
@@ -200,7 +232,10 @@ pub fn gate_allowed(model: &str, plan_id: &str, unlocked: bool) -> bool {
 /// ("anthropic:claude-opus-5"); we only serve via command-code lanes, so match
 /// on the id portion. A model id that itself contains ':' keeps it.
 pub fn bare_model(blocked: &str) -> &str {
-    blocked.split_once(':').map(|(_, rest)| rest).unwrap_or(blocked)
+    blocked
+        .split_once(':')
+        .map(|(_, rest)| rest)
+        .unwrap_or(blocked)
 }
 
 /// Access decision plus a short human reason (for `models --gated --json`).
@@ -224,10 +259,7 @@ pub fn gate(model: &str, plan_id: &str, unlocked: bool) -> (bool, &'static str) 
     let Some(cat) = model_category(model) else {
         return (true, "unknown model category");
     };
-    if blocked
-        .iter()
-        .any(|b| bare_model(b).to_lowercase() == cl)
-    {
+    if blocked.iter().any(|b| bare_model(b).to_lowercase() == cl) {
         return (false, "blocked for this plan");
     }
     if !allowed.contains(&cat) {
@@ -260,17 +292,6 @@ mod tests {
         assert_eq!(plan_monthly_cap("individual-max-20"), Some(300.0));
         assert_eq!(plan_monthly_cap("teams-pro"), Some(40.0));
         assert_eq!(plan_monthly_cap("individual-provider"), None);
-    }
-
-    #[test]
-    fn iso_hour_start_roundtrips() {
-        use crate::dates::iso_hour_start;
-        for epoch in [1_700_000_000u64, 1_767_225_600, 1_000_000_000] {
-            let s = iso_hour_start(epoch);
-            assert!(s.contains('T'), "must be a parseable ISO string: {s}");
-            let ms = parse_iso_utc(&s).unwrap() as u64;
-            assert_eq!(ms, (epoch - epoch % 3600) * 1000);
-        }
     }
 
     #[test]
@@ -347,7 +368,10 @@ mod tests {
             assert_eq!(money(c["in"].as_f64().unwrap()), c["out"].as_str().unwrap());
         }
         for c in v["compact"].as_array().unwrap() {
-            assert_eq!(compact(c["in"].as_u64().unwrap()), c["out"].as_str().unwrap());
+            assert_eq!(
+                compact(c["in"].as_u64().unwrap()),
+                c["out"].as_str().unwrap()
+            );
         }
         for c in v["pct"].as_array().unwrap() {
             assert_eq!(
@@ -380,8 +404,16 @@ mod tests {
             } else {
                 Some(c["resetAtMs"].as_f64().unwrap())
             };
-            let got = elapsed_pct(reset, c["durSecs"].as_u64().unwrap(), Some(c["now"].as_u64().unwrap()));
-            let want = if c["out"].is_null() { None } else { Some(c["out"].as_u64().unwrap() as u8) };
+            let got = elapsed_pct(
+                reset,
+                c["durSecs"].as_u64().unwrap(),
+                Some(c["now"].as_u64().unwrap()),
+            );
+            let want = if c["out"].is_null() {
+                None
+            } else {
+                Some(c["out"].as_u64().unwrap() as u8)
+            };
             assert_eq!(got, want, "elapsedPct {}", c["durSecs"]);
         }
         for c in v["paceEta"].as_array().unwrap() {
@@ -406,15 +438,46 @@ mod tests {
             } else {
                 Some(c["resetAtMs"].as_f64().unwrap())
             };
-            assert_eq!(rel_time(reset, Some(c["now"].as_u64().unwrap())), c["out"].as_str().unwrap());
+            assert_eq!(
+                rel_time(reset, Some(c["now"].as_u64().unwrap())),
+                c["out"].as_str().unwrap()
+            );
         }
         for c in v["parseIso"].as_array().unwrap() {
             let got = parse_iso_utc(c["in"].as_str().unwrap());
-            let want = if c["outMs"].is_null() { None } else { Some(c["outMs"].as_f64().unwrap()) };
+            let want = if c["outMs"].is_null() {
+                None
+            } else {
+                Some(c["outMs"].as_f64().unwrap())
+            };
             assert_eq!(got, want, "parse {}", c["in"]);
         }
         for c in v["duration"].as_array().unwrap() {
-            assert_eq!(duration(c["in"].as_u64().unwrap()), c["out"].as_str().unwrap());
+            assert_eq!(
+                duration(c["in"].as_u64().unwrap()),
+                c["out"].as_str().unwrap()
+            );
+        }
+        for c in v["monthlyWindow"].as_array().unwrap() {
+            let (w, dur) = monthly_window(
+                c["cap"].as_f64().unwrap(),
+                c["remaining"].as_f64().unwrap(),
+                c["periodStart"].as_str(),
+                c["periodEnd"].as_str(),
+            );
+            assert_eq!(w.used, c["used"].as_f64().unwrap(), "monthlyWindow used");
+            let reset = if c["resetAtMs"].is_null() {
+                None
+            } else {
+                Some(c["resetAtMs"].as_f64().unwrap())
+            };
+            assert_eq!(w.reset_at, reset, "monthlyWindow resetAtMs");
+            let want_dur = if c["durSecs"].is_null() {
+                None
+            } else {
+                Some(c["durSecs"].as_u64().unwrap())
+            };
+            assert_eq!(dur, want_dur, "monthlyWindow durSecs");
         }
         for c in v["plan"].as_array().unwrap() {
             let id = c["id"].as_str().unwrap();

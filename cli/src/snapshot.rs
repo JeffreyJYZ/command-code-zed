@@ -1,5 +1,5 @@
 use crate::api;
-use crate::render::{CYAN, RESET, Snapshot};
+use crate::render::{Snapshot, CYAN, RESET};
 use std::io::Write;
 
 pub fn snapshot() -> Snapshot {
@@ -20,7 +20,10 @@ pub fn snapshot() -> Snapshot {
     let stop2 = stop.clone();
     let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
     let writer = std::thread::spawn(move || {
-        let mut tty = std::fs::OpenOptions::new().write(true).open("/dev/tty").ok();
+        let mut tty = std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/tty")
+            .ok();
         let mut i = 0;
         while !stop2.load(std::sync::atomic::Ordering::Relaxed) {
             if let Some(f) = tty.as_mut() {
@@ -45,9 +48,12 @@ pub fn snapshot() -> Snapshot {
         let t2 = std::thread::spawn(move || api::credits(&k2));
         let t3 = std::thread::spawn(move || api::summary(&key));
         (
-            t1.join().unwrap_or_else(|_| Err("subscriptions thread panicked".into())),
-            t2.join().unwrap_or_else(|_| Err("credits thread panicked".into())),
-            t3.join().unwrap_or_else(|_| Err("summary thread panicked".into())),
+            t1.join()
+                .unwrap_or_else(|_| Err("subscriptions thread panicked".into())),
+            t2.join()
+                .unwrap_or_else(|_| Err("credits thread panicked".into())),
+            t3.join()
+                .unwrap_or_else(|_| Err("summary thread panicked".into())),
         )
     };
 
@@ -95,7 +101,10 @@ fn empty_snapshot() -> Snapshot {
                 purchased_credits: 0.0,
                 free_credits: 0.0,
             },
-            window_limits: api::WindowLimits { five_hour: None, weekly: None },
+            window_limits: api::WindowLimits {
+                five_hour: None,
+                weekly: None,
+            },
         },
         summary: api::UsageSummary {
             total_count: 0,
