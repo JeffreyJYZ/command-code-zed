@@ -94,6 +94,11 @@ cd opencode && bun test && bun run typecheck
 - The opencode npm package (`opencode/package.json`) is versioned
   **independently** of the Rust workspace (0.1.x vs 0.6.x) — intentional, not
   drift. Don't sync them.
+- **npm publish is interactive: it fails from the agent shell** (`EOTP`, prints
+  an auth URL). Build first (`cd opencode && bun run build`) so `dist/` is
+  current, then the user runs plain `npm publish` themselves — it opens a
+  browser to authenticate, no `--otp` needed. Never treat an `EOTP` failure as
+  published — verify with `npm view @jeffreyjyz/opencode-command-code version`.
 
 ## Learned-the-hard-way
 
