@@ -54,4 +54,4 @@ math into `core/`; `cli/` and `zed-ext/` keep only their presentation + I/O.
 
 ## License
 
-MIT — see [cli/LICENSE-MIT](cli/LICENSE-MIT) and [opencode/LICENSE](opencode/LICENSE).
+MIT — see [cli/LICENSE-MIT](cli/LICENSE-MIT), [core/LICENSE-MIT](core/LICENSE-MIT), [zed-ext/LICENSE-MIT](zed-ext/LICENSE-MIT), and [opencode/LICENSE](opencode/LICENSE).
