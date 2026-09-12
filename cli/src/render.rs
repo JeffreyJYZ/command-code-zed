@@ -53,7 +53,13 @@ pub fn rel_time(reset_at: Option<f64>, now: u64) -> String {
 /// Plan comparison table (mirrors the opencode plugin's plans table). The
 /// current plan row is shown with a leading "*" and, when `colors`, in bold.
 pub fn plans_table(current_plan_id: &str, colors: bool) -> String {
-    let mine = plan_name(current_plan_id);
+    // Empty id = plan unknown (no key/network): mark nothing rather than
+    // falling through to plan_name("") == "Free" and bolding the wrong row.
+    let mine = if current_plan_id.is_empty() {
+        ""
+    } else {
+        plan_name(current_plan_id)
+    };
     let (hl, rst) = if colors { (BOLD, RESET) } else { ("", "") };
     let mut o = format!(
         "{hl}{:<10} {:>8} {:>11} {:>8} {:>8}{rst}\n",
@@ -78,7 +84,11 @@ pub fn plans_table(current_plan_id: &str, colors: bool) -> String {
 
 /// Plan table as JSON: array of {name, price, creditsMonthly, fiveHour, weekly, current}.
 pub fn plans_json(current_plan_id: &str) -> String {
-    let mine = plan_name(current_plan_id);
+    let mine = if current_plan_id.is_empty() {
+        ""
+    } else {
+        plan_name(current_plan_id)
+    };
     let items: Vec<serde_json::Value> = PLANS
         .iter()
         .map(|(name, price, monthly, h5, wk)| {
@@ -290,11 +300,11 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
     o.push_str(&format!("\n{BOLD}This billing period{RESET}\n"));
     o.push_str(&format!(
         " Requests {CYAN}{}{RESET} · Cost {CYAN}{}{RESET} · Tokens {CYAN}{}{RESET} in / {CYAN}{}{RESET} out · Success {CYAN}{:.0}%{RESET}\n",
-        compact(s.summary.total_count),
-        money(s.summary.total_cost),
-        compact(s.summary.total_tokens_in),
-        compact(s.summary.total_tokens_out),
-        s.summary.success_rate,
+        compact(s.summary.total_count.unwrap_or(0)),
+        money(s.summary.total_cost.unwrap_or(0.0)),
+        compact(s.summary.total_tokens_in.unwrap_or(0)),
+        compact(s.summary.total_tokens_out.unwrap_or(0)),
+        s.summary.success_rate.unwrap_or(0.0),
     ));
 
     o
@@ -302,6 +312,9 @@ pub fn render(s: &Snapshot, bar_width: usize) -> String {
 
 /// One-shot plain output (no ANSI colors), for scripts.
 pub fn render_plain(s: &Snapshot) -> String {
+    if let Some(e) = &s.err {
+        return format!("Command Code Usage · fetch failed\nerror: {e}\n");
+    }
     let mut o = String::new();
     o.push_str(&format!(
         "Command Code Usage · {} · {}\n",
@@ -342,10 +355,10 @@ pub fn render_plain(s: &Snapshot) -> String {
     }
     o.push_str(&format!(
         "Period: {} requests, {}, {} in/{} out tokens\n",
-        s.summary.total_count,
-        money(s.summary.total_cost),
-        compact(s.summary.total_tokens_in),
-        compact(s.summary.total_tokens_out),
+        s.summary.total_count.unwrap_or(0),
+        money(s.summary.total_cost.unwrap_or(0.0)),
+        compact(s.summary.total_tokens_in.unwrap_or(0)),
+        compact(s.summary.total_tokens_out.unwrap_or(0)),
     ));
     o
 }

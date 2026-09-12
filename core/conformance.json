@@ -2,7 +2,9 @@
 	"money": [
 		{ "in": 0.0, "out": "$0.00" },
 		{ "in": 45.689, "out": "$45.69" },
-		{ "in": 0.005, "out": "$0.01" }
+		{ "in": 0.005, "out": "$0.01" },
+		{ "in": 0.125, "out": "$0.13" },
+		{ "in": 2.675, "out": "$2.68" }
 	],
 	"compact": [
 		{ "in": 999, "out": "999" },
@@ -10,6 +12,7 @@
 		{ "in": 2300, "out": "2.3K" },
 		{ "in": 1250, "out": "1.3K" },
 		{ "in": 1350, "out": "1.4K" },
+		{ "in": 999950, "out": "1.0M" },
 		{ "in": 1150000, "out": "1.2M" },
 		{ "in": 1250000, "out": "1.3M" },
 		{ "in": 316700000, "out": "316.7M" }
@@ -64,6 +67,8 @@
 	],
 	"parseIso": [
 		{ "in": "2026-09-27T12:23:00.000Z", "outMs": 1790511780000 },
+		{ "in": "2026-09-27T12:23Z", "outMs": 1790511780000 },
+		{ "in": "2026-09-27T12:23:00.500Z", "outMs": 1790511780500 },
 		{ "in": "2026-09-27T07:23:00.000-05:00", "outMs": 1790511780000 },
 		{ "in": "2026-09-27T19:53:00.000+07:30", "outMs": 1790511780000 },
 		{ "in": "not-a-date", "outMs": null }
@@ -89,6 +94,15 @@
 			"used": 24.5,
 			"resetAtMs": 1788220800000,
 			"durSecs": 1
+		},
+		{
+			"cap": 70.0,
+			"remaining": 45.5,
+			"periodStart": "2026-10-01T00:00:00.000Z",
+			"periodEnd": "2026-09-01T00:00:00.000Z",
+			"used": 24.5,
+			"resetAtMs": 1788220800000,
+			"durSecs": null
 		}
 	],
 	"plan": [
@@ -114,6 +128,7 @@
 		{ "model": "brand-new-model", "plan": "individual-goat", "unlocked": false, "allowed": true },
 		{ "model": "claude-fable-5-1", "plan": "individual-goat", "unlocked": false, "allowed": false },
 		{ "model": "claude-opus-4-7-20251101", "plan": "individual-pro", "unlocked": false, "allowed": false },
+		{ "model": "anthropic:claude-opus-5", "plan": "individual-goat", "unlocked": false, "allowed": false },
 		{ "model": "claude-opus-5", "plan": "", "unlocked": false, "allowed": true }
 	]
 }

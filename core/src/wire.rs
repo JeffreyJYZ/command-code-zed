@@ -75,14 +75,16 @@ pub struct SubData {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageSummary {
+    // Option so a partial/unavailable summary renders as "—" rather than a
+    // fake 0. Callers that aggregate treat None as 0.
     #[serde(default)]
-    pub total_count: u64,
+    pub total_count: Option<u64>,
     #[serde(default)]
-    pub total_cost: f64,
+    pub total_cost: Option<f64>,
     #[serde(default)]
-    pub success_rate: f64,
+    pub success_rate: Option<f64>,
     #[serde(default)]
-    pub total_tokens_in: u64,
+    pub total_tokens_in: Option<u64>,
     #[serde(default)]
-    pub total_tokens_out: u64,
+    pub total_tokens_out: Option<u64>,
 }

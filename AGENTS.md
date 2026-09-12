@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Workspace: cmduse-core + cmd-usage CLI + Zed extension + opencode plugin,
-single source of shared logic. Release line 0.6.6 (0.2–0.4 slots are
+single source of shared logic. Release line 0.6.7 (0.2–0.4 slots are
 yanked-forever on crates.io from the old crate).
 
 ## Layout
@@ -79,11 +79,11 @@ cd opencode && bun test && bun run typecheck
 ## Publishing (NEVER without explicit user go)
 
 - Order matters: `cmduse-core` first, then `cmd-usage`. `cli/Cargo.toml` dep
-  is `{ path = "../core", version = "0.6.6" }` — path resolves locally, the
+  is `{ path = "../core", version = "0.6.7" }` — path resolves locally, the
   `version` must already exist on crates.io for `cmd-usage` publish to work.
 - **crates.io version slots are FOREVER.** 0.2.0–0.4.0 were published+yanked
   on old `cmd-usage` — you can never re-upload those numbers. Current 0.x
-  release line is 0.6.6 (first free slot past the dead 0.2–0.4 range). Skip
+  release line is 0.6.7 (first free slot past the dead 0.2–0.4 range). Skip
   taken numbers, never fight the 400.
 - Clean tree required (commit first, incl. Cargo.lock). Zed ext has NO
   release channel (local dev-install only).
@@ -116,4 +116,21 @@ the account API. Report output goes through `render::color_enabled()`
 floor to a UTC hour, that breaks minute-bearing offsets like +05:30.
 `pace_eta` returns **seconds** (a duration); format it with `core::duration`,
 never `rel_time` — the latter expects an absolute reset epoch and renders any
-small duration as "resetting…" (bug shipped in cli + zed until 0.6.2).
+small duration as "resetting…" (bug shipped in cli + zed until 0.6.2, and again
+in the CLI statusline's `{5h_eta}`/`{wk_eta}` until 0.6.7). Any ETA text goes
+through `duration`.
+
+`money` rounds to cents with explicit multiply-round (`(v*100).round()/100`),
+not `{:.2}`/`toFixed`: the two formats disagree at `.x5` ties (`0.125` →
+half-even `$0.12` vs half-away `$0.13`; `2.675*100` rounds up to `267.5`, so
+naive multiply gives `$2.68`). Both ports use the same multiply-round so the
+conformance vectors pin them.
+
+`--tz` account daily builds each `?since=` value as a UTC `Z` instant via
+`dates::iso_instant`; never interpolate an offset suffix — `+` decodes as a
+space server-side and silently corrupts the timestamp (fixed 0.6.7).
+
+`gate`/`evaluateModelAccess` strip the provider qualifier with `bare_model`
+*before* canonicalizing the incoming model, so a provider-qualified input
+(`anthropic:claude-opus-5`) can't miss the category table and bypass
+`hardBlocked`.

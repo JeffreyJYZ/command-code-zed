@@ -5,8 +5,9 @@ use zed_extension_api::{
 };
 
 use cmduse_core::{
-    compact, elapsed_pct, money, pct, plan_monthly_cap, plan_name, rel_time, CreditsResp,
-    SubscriptionsResp, UsageSummary, Window, PLANS,
+    compact, elapsed_pct, gate_age_days, money, pct, plan_monthly_cap, plan_name,
+    plan_rule_matched, rel_time, CreditsResp, SubscriptionsResp, UsageSummary, Window,
+    GATE_CLI_VERSION, PLANS,
 };
 
 const API_BASE: &str = "https://api.commandcode.ai";
@@ -17,7 +18,7 @@ struct CommandCodeUsage;
 fn get_api_key_and_now() -> Result<(String, Option<u64>), String> {
     let out = Command::new("sh")
         .arg("-c")
-        .arg("cat \"$HOME/.commandcode/auth.json\"; printf \"\\n__CMDNOW__\"; date +%s")
+        .arg("cat \"$HOME/.commandcode/auth.json\" && printf \"\\n__CMDNOW__\" && date +%s")
         .output()
         .map_err(|e| format!("failed to spawn sh: {e}"))?;
     if out.status != Some(0) {
@@ -100,10 +101,33 @@ fn window_line(label: &str, w: &Window, now: Option<u64>, dur_secs: Option<u64>)
     )
 }
 
+/// Rendered line index where the next pushed element begins. Elements may
+/// carry trailing '\n' and `join("\n")` inserts a separator, so section
+/// ranges must count rendered lines, not Vec elements.
+fn next_line(lines: &[String], line_count: u32) -> u32 {
+    line_count + if lines.is_empty() { 0 } else { 1 }
+}
+
+/// Push one output element, advancing `line_count` past the join separator
+/// and any newlines the element itself contains.
+fn push_line(lines: &mut Vec<String>, line_count: &mut u32, s: impl Into<String>) {
+    if !lines.is_empty() {
+        *line_count += 1; // join("\n") separator
+    }
+    let s = s.into();
+    *line_count += s.matches('\n').count() as u32;
+    lines.push(s);
+}
+
 fn plans_table(current: &str) -> String {
     // Mark by exact plan_name match (not substring): "individual-goat"
-    // contains "go", so substring matching double-marks the Go row.
-    let mine = plan_name(current);
+    // contains "go", so substring matching double-marks the Go row. Empty id
+    // = unknown plan: mark nothing (would otherwise fall through to "Free").
+    let mine = if current.is_empty() {
+        ""
+    } else {
+        plan_name(current)
+    };
     let mut out =
         String::from("| Plan | Price | Credits/mo | 5-hour | Weekly |\n|---|---|---|---|---|\n");
     for &(name, price, monthly, h5, wk) in PLANS {
@@ -149,24 +173,65 @@ impl Extension for CommandCodeUsage {
         let (key, now) = get_api_key_and_now()?;
 
         let mut lines: Vec<String> = Vec::new();
-        let mut section_starts: Vec<(usize, &str)> = Vec::new();
+        let mut section_starts: Vec<(u32, &str)> = Vec::new();
+        let mut line_count: u32 = 0;
 
         // 1. plan + credits
-        section_starts.push((lines.len(), "Plan & Credits"));
+        section_starts.push((next_line(&lines, line_count), "Plan & Credits"));
+        // zed's HttpResponse carries no status, so an error body would otherwise
+        // deserialize to no `data` and render as a fake "Free" plan.
+        let raw = http_get_json("/alpha/billing/subscriptions", &key)?;
+        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&raw) {
+            if v.get("error").is_some() && v.get("data").is_none() {
+                let msg = v
+                    .get("error")
+                    .and_then(|e| e.as_str())
+                    .unwrap_or("request failed");
+                return Err(format!("subscriptions: {msg}"));
+            }
+        }
         let sub: SubscriptionsResp =
-            serde_json::from_slice(&http_get_json("/alpha/billing/subscriptions", &key)?)
-                .map_err(|e| format!("subscriptions parse: {e}"))?;
+            serde_json::from_slice(&raw).map_err(|e| format!("subscriptions parse: {e}"))?;
         let sub_data = sub.data_or_free();
-        lines.push(format!(
-            "## Command Code — {} ({})\n",
-            plan_name(&sub_data.plan_id),
-            sub_data.status
-        ));
+        push_line(
+            &mut lines,
+            &mut line_count,
+            format!(
+                "## Command Code — {} ({})\n",
+                plan_name(&sub_data.plan_id),
+                sub_data.status
+            ),
+        );
+        if !sub_data.plan_id.is_empty()
+            && sub_data.plan_id != "free"
+            && !plan_rule_matched(&sub_data.plan_id)
+        {
+            push_line(
+                &mut lines,
+                &mut line_count,
+                format!(
+                    "> warning: unknown plan id `{}` — showing Free; update core/plans.json\n",
+                    sub_data.plan_id
+                ),
+            );
+        }
+        if let Some(days) = now.and_then(gate_age_days) {
+            if days > 30 {
+                push_line(
+                    &mut lines,
+                    &mut line_count,
+                    format!(
+                        "> warning: gating snapshot is {days}d old (CLI {GATE_CLI_VERSION}) — run `bun run extract` from the repo root\n"
+                    ),
+                );
+            }
+        }
         if let Some(end) = &sub_data.current_period_end {
-            lines.push(format!(
-                "Billing period ends `{}`\n",
-                &end[..10.min(end.len())]
-            ));
+            push_line(
+                &mut lines,
+                &mut line_count,
+                format!("Billing period ends `{}`\n", &end[..10.min(end.len())]),
+            );
         }
 
         let credits: CreditsResp =
@@ -174,24 +239,32 @@ impl Extension for CommandCodeUsage {
                 .map_err(|e| format!("credits parse: {e}"))?;
         let cap = plan_monthly_cap(&sub_data.plan_id);
         match cap {
-            Some(c) => lines.push(format!(
-                "**Credits:** {} / {} monthly · {} purchased · {} free\n",
-                money(credits.credits.monthly_credits),
-                money(c),
-                money(credits.credits.purchased_credits),
-                money(credits.credits.free_credits),
-            )),
-            None => lines.push(format!(
-                "**Credits remaining:** {} monthly · {} purchased · {} free\n",
-                money(credits.credits.monthly_credits),
-                money(credits.credits.purchased_credits),
-                money(credits.credits.free_credits),
-            )),
+            Some(c) => push_line(
+                &mut lines,
+                &mut line_count,
+                format!(
+                    "**Credits:** {} / {} monthly · {} purchased · {} free\n",
+                    money(credits.credits.monthly_credits),
+                    money(c),
+                    money(credits.credits.purchased_credits),
+                    money(credits.credits.free_credits),
+                ),
+            ),
+            None => push_line(
+                &mut lines,
+                &mut line_count,
+                format!(
+                    "**Credits remaining:** {} monthly · {} purchased · {} free\n",
+                    money(credits.credits.monthly_credits),
+                    money(credits.credits.purchased_credits),
+                    money(credits.credits.free_credits),
+                ),
+            ),
         }
 
         // 2. usage windows
-        section_starts.push((lines.len(), "Usage Windows"));
-        lines.push("### Usage windows".into());
+        section_starts.push((next_line(&lines, line_count), "Usage Windows"));
+        push_line(&mut lines, &mut line_count, "### Usage windows");
         if let Some(c) = cap {
             let (w, dur) = cmduse_core::monthly_window(
                 c,
@@ -199,67 +272,99 @@ impl Extension for CommandCodeUsage {
                 sub_data.current_period_start.as_deref(),
                 sub_data.current_period_end.as_deref(),
             );
-            lines.push(window_line("Monthly", &w, now, dur));
+            push_line(
+                &mut lines,
+                &mut line_count,
+                window_line("Monthly", &w, now, dur),
+            );
         }
         if let Some(w) = &credits.window_limits.five_hour {
-            lines.push(window_line(
-                "5-hour",
-                w,
-                now,
-                Some(cmduse_core::FIVE_HOUR_SECS),
-            ));
+            push_line(
+                &mut lines,
+                &mut line_count,
+                window_line("5-hour", w, now, Some(cmduse_core::FIVE_HOUR_SECS)),
+            );
         }
         if let Some(w) = &credits.window_limits.weekly {
-            lines.push(window_line(
-                "Weekly",
-                w,
-                now,
-                Some(cmduse_core::WEEKLY_SECS),
-            ));
+            push_line(
+                &mut lines,
+                &mut line_count,
+                window_line("Weekly", w, now, Some(cmduse_core::WEEKLY_SECS)),
+            );
         }
         if credits.window_limits.five_hour.is_none() && credits.window_limits.weekly.is_none() {
-            lines.push("No rolling windows on this plan (pay-as-you-go credits only).\n".into());
+            push_line(
+                &mut lines,
+                &mut line_count,
+                "No rolling windows on this plan (pay-as-you-go credits only).\n",
+            );
         }
 
-        // 3. usage summary
-        section_starts.push((lines.len(), "Billing Period Usage"));
-        lines.push("### This billing period".into());
-        let summary: UsageSummary =
-            serde_json::from_slice(&http_get_json("/alpha/usage/summary", &key)?)
-                .map_err(|e| format!("summary parse: {e}"))?;
-        lines.push("| Metric | Value |".into());
-        lines.push("|---|---|".into());
-        lines.push(format!("| Requests | {} |", summary.total_count));
-        lines.push(format!("| Cost | {} |", money(summary.total_cost)));
-        lines.push(format!(
-            "| Tokens in / out | {} / {} |",
-            compact(summary.total_tokens_in),
-            compact(summary.total_tokens_out)
-        ));
-        lines.push(format!("| Success rate | {:.0}% |", summary.success_rate));
-        lines.push(String::new());
+        // 3. usage summary (optional: skip the section if unavailable)
+        section_starts.push((next_line(&lines, line_count), "Billing Period Usage"));
+        push_line(&mut lines, &mut line_count, "### This billing period");
+        let summary = http_get_json("/alpha/usage/summary", &key)
+            .ok()
+            .and_then(|b| serde_json::from_slice::<UsageSummary>(&b).ok());
+        match &summary {
+            Some(sm) => {
+                push_line(&mut lines, &mut line_count, "| Metric | Value |");
+                push_line(&mut lines, &mut line_count, "|---|---|");
+                push_line(
+                    &mut lines,
+                    &mut line_count,
+                    format!(
+                        "| Requests | {} |",
+                        sm.total_count.map_or("—".into(), |v| v.to_string())
+                    ),
+                );
+                push_line(
+                    &mut lines,
+                    &mut line_count,
+                    format!("| Cost | {} |", sm.total_cost.map_or("—".into(), money)),
+                );
+                push_line(
+                    &mut lines,
+                    &mut line_count,
+                    format!(
+                        "| Tokens in / out | {} / {} |",
+                        sm.total_tokens_in.map_or("—".into(), compact),
+                        sm.total_tokens_out.map_or("—".into(), compact),
+                    ),
+                );
+                push_line(
+                    &mut lines,
+                    &mut line_count,
+                    format!(
+                        "| Success rate | {} |",
+                        sm.success_rate.map_or("—".into(), |r| format!("{r:.0}%"))
+                    ),
+                );
+                push_line(&mut lines, &mut line_count, String::new());
+            }
+            None => push_line(
+                &mut lines,
+                &mut line_count,
+                "_Usage summary unavailable._\n",
+            ),
+        }
 
         // 4. plans reference
-        section_starts.push((lines.len(), "Plan Reference"));
-        lines.push("### All plans".into());
-        lines.push(plans_table(&sub_data.plan_id));
+        section_starts.push((next_line(&lines, line_count), "Plan Reference"));
+        push_line(&mut lines, &mut line_count, "### All plans");
+        push_line(&mut lines, &mut line_count, plans_table(&sub_data.plan_id));
 
-        let total = lines.len() as u32;
+        let text = lines.join("\n");
+        let total = text.lines().count() as u32;
         let sections = section_starts
             .into_iter()
             .map(|(start, label)| SlashCommandOutputSection {
-                range: Range {
-                    start: start as u32,
-                    end: total,
-                },
+                range: Range { start, end: total },
                 label: label.into(),
             })
             .collect();
 
-        Ok(SlashCommandOutput {
-            text: lines.join("\n"),
-            sections,
-        })
+        Ok(SlashCommandOutput { text, sections })
     }
 }
 
@@ -308,5 +413,22 @@ mod tests {
         assert_eq!(bar(0.0, 10.0), "░".repeat(BAR_WIDTH));
         assert_eq!(bar(10.0, 10.0), "█".repeat(BAR_WIDTH));
         assert_eq!(bar(5.0, 10.0).chars().filter(|c| *c == '█').count(), 6);
+    }
+
+    #[test]
+    fn section_ranges_count_rendered_lines() {
+        // Elements carry trailing '\n' + join separators, so section starts
+        // must count rendered lines, not Vec elements.
+        let mut lines = Vec::new();
+        let mut n = 0u32;
+        let s1 = next_line(&lines, n);
+        push_line(&mut lines, &mut n, "a\n");
+        let s2 = next_line(&lines, n);
+        push_line(&mut lines, &mut n, "b\n");
+        push_line(&mut lines, &mut n, "c");
+        let text = lines.join("\n"); // "a\n\nb\n\nc" → 5 lines
+        assert_eq!(s1, 0);
+        assert_eq!(s2, 2);
+        assert_eq!(text.lines().count() as u32, 5);
     }
 }

@@ -2,29 +2,31 @@ use std::path::PathBuf;
 
 const CRATE: &str = "cmd-usage";
 const CURRENT: &str = env!("CARGO_PKG_VERSION");
+const MAX_AGE_SECS: u64 = 86_400;
 
 fn cache_path() -> PathBuf {
     crate::paths::home().join(".cache/cmd-usage/last-check")
 }
 
-/// Check crates.io for a newer cmd-usage, at most once per 24h (cache file).
-/// Synchronous and best-effort: returns a warning message or None. Called
-/// before the watch loop's first frame so a stderr line can't tear the
-/// in-place redraw.
+/// Check crates.io for a newer cmd-usage, hitting the network at most once per
+/// 24h. The cached latest version is replayed on every run, so an available
+/// update keeps showing until you upgrade (not just once a day). Synchronous
+/// and best-effort: returns a warning message or None.
 pub fn check_sync() -> Option<String> {
-    if let Ok(meta) = std::fs::metadata(cache_path()) {
-        if let Ok(age) = meta.modified().map(|m| m.elapsed()) {
-            if age.is_ok_and(|a| a.as_secs() < 86_400) {
-                return None;
+    let now = cmduse_core::dates::now_secs();
+    // Fresh cache: no network, just replay the last known version.
+    if let Ok(text) = std::fs::read_to_string(cache_path()) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+            if let (Some(checked), Some(latest)) = (v["checkedAt"].as_u64(), v["latest"].as_str()) {
+                if now.saturating_sub(checked) < MAX_AGE_SECS {
+                    return update_msg(latest);
+                }
             }
         }
     }
     if let Some(dir) = cache_path().parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    // write the stamp before the network call so a failed check doesn't retry
-    // this process or the next one within the day
-    let _ = std::fs::write(cache_path(), cmduse_core::dates::now_secs().to_string());
 
     let url = format!("https://crates.io/api/v1/crates/{CRATE}");
     let resp = ureq::get(&url)
@@ -38,13 +40,23 @@ pub fn check_sync() -> Option<String> {
     let latest = json["crate"]["max_stable_version"]
         .as_str()
         .or_else(|| json["crate"]["max_version"].as_str())?;
-    if newer(latest, CURRENT) {
-        Some(format!(
-            "\x1b[33mcmduse: update available {CURRENT} → {latest} (cargo install cmd-usage / brew upgrade jeffreyjyz/tap/cmduse)\x1b[0m"
-        ))
-    } else {
-        None
+    // Cache only after a successful check: an offline/transient failure must
+    // not silence the next run for 24h. Old-format caches (bare timestamp)
+    // fail the JSON parse above and are replaced here.
+    let entry = serde_json::json!({ "checkedAt": now, "latest": latest });
+    let _ = std::fs::write(cache_path(), entry.to_string());
+    update_msg(latest)
+}
+
+/// Plain "update available" line when `latest` beats CURRENT; the caller
+/// colors/places it (frame in watch mode, stderr for one-shot).
+fn update_msg(latest: &str) -> Option<String> {
+    if !newer(latest, CURRENT) {
+        return None;
     }
+    Some(format!(
+        "cmduse: update available {CURRENT} → {latest} (cargo install cmd-usage / brew upgrade jeffreyjyz/tap/cmduse)"
+    ))
 }
 
 /// True when dotted-numeric `latest` > `current` (missing parts count as 0).
@@ -77,5 +89,14 @@ mod tests {
         assert!(!newer("0.6.6-beta.1", "0.6.6"));
         assert!(!newer("0.6.5+build.2", "0.6.5"));
         assert!(newer("0.6.6-beta.1", "0.6.5"));
+    }
+
+    #[test]
+    fn update_message_only_when_newer() {
+        assert!(update_msg(CURRENT).is_none());
+        assert!(update_msg("0.0.1").is_none());
+        let msg = update_msg("99.0.0").expect("newer version yields a message");
+        assert!(msg.contains("update available"), "{msg}");
+        assert!(msg.contains("99.0.0"), "{msg}");
     }
 }

@@ -39,7 +39,10 @@ pub fn plan_monthly_cap(plan_id: &str) -> Option<f64> {
 }
 
 pub fn money(v: f64) -> String {
-    format!("${v:.2}")
+    // Round to cents half-away-from-zero before formatting: `{:.2}` alone is
+    // round-half-to-even, JS `toFixed` is half-away, so a .x5 tie (0.125)
+    // disagreed ("$0.12" vs "$0.13"). Matches the opencode port.
+    format!("${:.2}", (v * 100.0).round() / 100.0)
 }
 
 /// Rolling-window lengths — the API serves only `resetAt`, the length is
@@ -60,9 +63,15 @@ pub fn monthly_window(
     let used = (cap - remaining).clamp(0.0, cap);
     let reset_at = period_end.and_then(parse_iso_utc);
     let dur = match (period_start, period_end) {
-        (Some(st), Some(en)) => parse_iso_utc(st)
-            .zip(parse_iso_utc(en))
-            .map(|(a, b)| ((b - a) as u64 / 1000).max(1)),
+        (Some(st), Some(en)) => parse_iso_utc(st).zip(parse_iso_utc(en)).and_then(|(a, b)| {
+            // A period that ends before it starts (API glitch) must not wrap
+            // the u64 cast; equal timestamps keep the 1s floor the vectors pin.
+            if b < a {
+                None
+            } else {
+                Some(((b - a) as u64 / 1000).max(1))
+            }
+        }),
         _ => None,
     };
     (
@@ -81,7 +90,8 @@ pub fn monthly_window(
 /// `Math.round` at exact `.x5` ties (1_250_000 → "1.2M" vs "1.3M").
 pub fn compact(n: u64) -> String {
     let round1 = |v: f64| (v * 10.0).round() / 10.0;
-    if n >= 1_000_000 {
+    // >=999_950 rounds to 1000.0K under the K bucket, so promote to M first.
+    if n >= 999_950 {
         format!("{:.1}M", round1(n as f64 / 1_000_000.0))
     } else if n >= 1_000 {
         format!("{:.1}K", round1(n as f64 / 1_000.0))
@@ -221,7 +231,7 @@ pub fn canonical_model(model: &str) -> String {
 /// Table category, else the longest known id that prefixes it (a version bump
 /// of a known model inherits its category; otherwise None).
 fn model_category(model: &str) -> Option<&'static str> {
-    let lower = canonical_model(model).to_lowercase();
+    let lower = canonical_model(bare_model(model)).to_lowercase();
     if let Some((_, c)) = GATE_CATEGORIES
         .iter()
         .find(|(m, _)| m.to_lowercase() == lower)
@@ -260,7 +270,9 @@ pub fn gate(model: &str, plan_id: &str, unlocked: bool) -> (bool, &'static str) 
     if plan_id.is_empty() {
         return (true, "unknown plan");
     }
-    let canonical = canonical_model(model);
+    // Strip any provider qualifier first: a caller may pass
+    // "anthropic:claude-opus-5" while the block tables store both forms.
+    let canonical = canonical_model(bare_model(model));
     let cl = canonical.to_lowercase();
     if let Some((_, list)) = GATE_HARD_BLOCKED.iter().find(|(p, _)| *p == plan_id) {
         if list.iter().any(|m| m.to_lowercase() == cl) {

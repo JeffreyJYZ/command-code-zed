@@ -1,6 +1,6 @@
 use crate::api;
 use cmduse_core::dates::{
-    civil_from_days, day_shift, hour_label, iso_instant, now_secs, parse_iso_utc, tz_offset_suffix,
+    civil_from_days, day_shift, hour_label, iso_instant, now_secs, parse_iso_utc,
 };
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -74,7 +74,6 @@ pub struct LocalData {
     pub by_day: ByDay,
     pub by_model: ByModel,
     pub by_project: ByProject,
-    pub sessions: u64,
     pub total: Totals,
 }
 
@@ -113,15 +112,11 @@ fn session_files() -> Vec<(String, String)> {
     out
 }
 
-pub fn load_local(tz: i64) -> LocalData {
-    let mut data = LocalData {
-        by_day: ByDay::new(),
-        by_model: ByModel::new(),
-        by_project: ByProject::new(),
-        sessions: 0,
-        total: Totals::default(),
-    };
-
+/// Walk every session JSONL and call `f` for each assistant message carrying
+/// usage: (project, timestamp, model, usage, saw_session_marker). The walk /
+/// parse / user-role filter lives here so the daily and hourly scans can't
+/// drift apart.
+fn for_each_usage_line(mut f: impl FnMut(&str, &str, Option<&str>, &Usage, bool)) {
     for (proj_name, text) in session_files() {
         let mut is_session_file = false;
         for line in text.lines() {
@@ -129,32 +124,47 @@ pub fn load_local(tz: i64) -> LocalData {
                 continue;
             };
             match l.kind.as_str() {
-                "session" => {
-                    data.sessions += 1;
-                    is_session_file = true;
-                }
+                "session" => is_session_file = true,
                 "message" => {
                     let Some(u) = l.usage else { continue };
                     // only assistant (model) messages carry usage; guard anyway
                     if l.message.as_ref().and_then(|m| m.role.as_deref()) == Some("user") {
                         continue;
                     }
-                    let bucket = |t: &mut Totals| t.add(&u);
-                    if let Some(day) = day_of(&l.timestamp, tz) {
-                        bucket(data.by_day.entry(day).or_default());
-                    }
-                    if let Some(m) = &l.model {
-                        bucket(data.by_model.entry(m.clone()).or_default());
-                    }
-                    if is_session_file {
-                        bucket(data.by_project.entry(proj_name.clone()).or_default());
-                    }
-                    bucket(&mut data.total);
+                    f(
+                        &proj_name,
+                        &l.timestamp,
+                        l.model.as_deref(),
+                        &u,
+                        is_session_file,
+                    );
                 }
                 _ => {}
             }
         }
     }
+}
+
+pub fn load_local(tz: i64) -> LocalData {
+    let mut data = LocalData {
+        by_day: ByDay::new(),
+        by_model: ByModel::new(),
+        by_project: ByProject::new(),
+        total: Totals::default(),
+    };
+
+    for_each_usage_line(|proj, ts, model, u, is_session_file| {
+        if let Some(day) = day_of(ts, tz) {
+            data.by_day.entry(day).or_default().add(u);
+        }
+        if let Some(m) = model {
+            data.by_model.entry(m.to_string()).or_default().add(u);
+        }
+        if is_session_file {
+            data.by_project.entry(proj.to_string()).or_default().add(u);
+        }
+        data.total.add(u);
+    });
     data
 }
 
@@ -165,12 +175,13 @@ pub fn load_local(tz: i64) -> LocalData {
 // from that instant to now. Per-day usage = cum(day start) - cum(next day
 // start).
 
+/// UTC instant for local midnight of civil `day` in `tz` seconds east of UTC.
+/// Emitted as a `Z` instant, never an offset suffix: the value goes into a
+/// `?since=` query and `+` would decode as a space server-side.
 fn iso_day_start(day: &str, tz: i64) -> String {
-    if tz == 0 {
-        format!("{day}T00:00:00.000Z")
-    } else {
-        // explicit offset: core parses it and shifts to UTC
-        format!("{day}T00:00:00{}", tz_offset_suffix(tz))
+    match parse_iso_utc(&format!("{day}T00:00:00.000Z")) {
+        Some(ms) => iso_instant(((ms / 1000.0) as i64 - tz).max(0) as u64),
+        None => format!("{day}T00:00:00.000Z"),
     }
 }
 
@@ -242,17 +253,23 @@ pub fn load_account_daily(days: usize, key: &str, tz: i64) -> Result<ByDay, Stri
         let (reqs, cost, tin, tout) = if i + 1 < by_day.len() {
             let next = &by_day[i + 1].1;
             (
-                cum.total_count.saturating_sub(next.total_count),
-                (cum.total_cost - next.total_cost).max(0.0),
-                cum.total_tokens_in.saturating_sub(next.total_tokens_in),
-                cum.total_tokens_out.saturating_sub(next.total_tokens_out),
+                cum.total_count
+                    .unwrap_or(0)
+                    .saturating_sub(next.total_count.unwrap_or(0)),
+                (cum.total_cost.unwrap_or(0.0) - next.total_cost.unwrap_or(0.0)).max(0.0),
+                cum.total_tokens_in
+                    .unwrap_or(0)
+                    .saturating_sub(next.total_tokens_in.unwrap_or(0)),
+                cum.total_tokens_out
+                    .unwrap_or(0)
+                    .saturating_sub(next.total_tokens_out.unwrap_or(0)),
             )
         } else {
             (
-                cum.total_count,
-                cum.total_cost,
-                cum.total_tokens_in,
-                cum.total_tokens_out,
+                cum.total_count.unwrap_or(0),
+                cum.total_cost.unwrap_or(0.0),
+                cum.total_tokens_in.unwrap_or(0),
+                cum.total_tokens_out.unwrap_or(0),
             )
         };
         if reqs == 0 && cost == 0.0 {
@@ -322,19 +339,26 @@ pub fn load_account_hourly(
         let (reqs, cost, tin, tout) = if i + 1 < cums.len() {
             let next = &cums[i + 1];
             (
-                cums[i].total_count.saturating_sub(next.total_count),
-                (cums[i].total_cost - next.total_cost).max(0.0),
-                cums[i].total_tokens_in.saturating_sub(next.total_tokens_in),
+                cums[i]
+                    .total_count
+                    .unwrap_or(0)
+                    .saturating_sub(next.total_count.unwrap_or(0)),
+                (cums[i].total_cost.unwrap_or(0.0) - next.total_cost.unwrap_or(0.0)).max(0.0),
+                cums[i]
+                    .total_tokens_in
+                    .unwrap_or(0)
+                    .saturating_sub(next.total_tokens_in.unwrap_or(0)),
                 cums[i]
                     .total_tokens_out
-                    .saturating_sub(next.total_tokens_out),
+                    .unwrap_or(0)
+                    .saturating_sub(next.total_tokens_out.unwrap_or(0)),
             )
         } else {
             (
-                cums[i].total_count,
-                cums[i].total_cost,
-                cums[i].total_tokens_in,
-                cums[i].total_tokens_out,
+                cums[i].total_count.unwrap_or(0),
+                cums[i].total_cost.unwrap_or(0.0),
+                cums[i].total_tokens_in.unwrap_or(0),
+                cums[i].total_tokens_out.unwrap_or(0),
             )
         };
         out.push((
@@ -376,23 +400,11 @@ pub fn load_local_hourly(hours: usize, tz: i64) -> Vec<(String, Totals)> {
     };
 
     let mut by_hour: BTreeMap<u64, Totals> = BTreeMap::new();
-    for (_proj, text) in session_files() {
-        for line in text.lines() {
-            let Ok(l) = serde_json::from_str::<Line>(line) else {
-                continue;
-            };
-            if l.kind != "message" {
-                continue;
-            }
-            let Some(u) = l.usage else { continue };
-            if l.message.as_ref().and_then(|m| m.role.as_deref()) == Some("user") {
-                continue;
-            }
-            if let Some(h) = bucket_of(&l.timestamp) {
-                by_hour.entry(h).or_default().add(&u);
-            }
+    for_each_usage_line(|_proj, ts, _model, u, _is_session| {
+        if let Some(h) = bucket_of(ts) {
+            by_hour.entry(h).or_default().add(u);
         }
-    }
+    });
     (0..hours)
         .rev()
         .map(|i| {
@@ -430,6 +442,22 @@ mod tests {
         let e = 1_790_539_200u64;
         assert_eq!(local_hour_start(e, 0), 1_790_539_200);
         assert_eq!(local_hour_start(e, 19_800), 1_790_557_200);
+    }
+
+    #[test]
+    fn iso_day_start_is_utc_z_instant() {
+        // +05:30 local midnight = 18:30 UTC the previous day; never a '+'
+        // suffix (would decode as a space in the API query string).
+        assert_eq!(
+            iso_day_start("2026-09-28", 19_800),
+            "2026-09-27T18:30:00.000Z"
+        );
+        assert_eq!(iso_day_start("2026-09-28", 0), "2026-09-28T00:00:00.000Z");
+        assert_eq!(
+            iso_day_start("2026-09-28", -28_800),
+            "2026-09-28T08:00:00.000Z"
+        );
+        assert!(!iso_day_start("2026-09-28", 19_800).contains('+'));
     }
 
     #[test]

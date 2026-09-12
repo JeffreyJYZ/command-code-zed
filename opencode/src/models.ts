@@ -10,7 +10,7 @@ export type ModelSplit = {
 };
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
-let cache: { at: number; models: CmdModel[] } | null = null;
+let cache: { key: string; at: number; models: CmdModel[] } | null = null;
 
 // ponytail: process-lifetime cache only; restart refetches. Add disk cache if
 // startup fetch latency ever annoys offline users.
@@ -32,9 +32,12 @@ export function splitModels(models: CmdModel[]): {
 /** Fetch live model list, apply plan gating, split by wire protocol. */
 export async function loadModels(key: string): Promise<ModelSplit> {
 	warnIfGatingStale();
+	// Cache is keyed by API key: CMD_API_KEY lets one process serve multiple
+	// accounts, and account A's model list must not leak into account B.
 	let models: CmdModel[];
-	if (cache && Date.now() - cache.at < CACHE_TTL_MS) {
-		models = cache.models;
+	const fresh = cache && cache.key === key && Date.now() - cache.at < CACHE_TTL_MS;
+	if (fresh) {
+		models = cache!.models;
 	} else {
 		try {
 			const resp = await providerModels(key);
@@ -43,9 +46,9 @@ export async function loadModels(key: string): Promise<ModelSplit> {
 				name: m.name ?? m.id,
 				contextLength: m.context_length ?? 0,
 			}));
-			cache = { at: Date.now(), models };
+			cache = { key, at: Date.now(), models };
 		} catch (e) {
-			if (cache) {
+			if (cache && cache.key === key) {
 				models = cache.models;
 			} else {
 				throw new Error(

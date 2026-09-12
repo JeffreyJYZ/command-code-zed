@@ -127,10 +127,17 @@ export const CommandCodePlugin: Plugin = async (_input) => {
 			type ProviderModels = NonNullable<NonNullable<(typeof cfg)["provider"]>[string]["models"]>;
 			const existing = (
 				id: string,
-			): { models?: ProviderModels; options?: Record<string, unknown> } =>
+			): {
+				models?: ProviderModels;
+				options?: Record<string, unknown>;
+				npm?: string;
+				name?: string;
+			} =>
 				(cfg.provider?.[id] ?? {}) as {
 					models?: ProviderModels;
 					options?: Record<string, unknown>;
+					npm?: string;
+					name?: string;
 				};
 
 			let split: Awaited<ReturnType<typeof loadModels>> | undefined;
@@ -173,8 +180,8 @@ export const CommandCodePlugin: Plugin = async (_input) => {
 
 			const userAnthropic = existing("command-code-anthropic");
 			cfg.provider["command-code-anthropic"] = {
-				npm: userAnthropic.options ? undefined : "@ai-sdk/anthropic",
-				name: "Command Code (Anthropic)",
+				npm: userAnthropic.npm ?? "@ai-sdk/anthropic",
+				name: userAnthropic.name ?? "Command Code (Anthropic)",
 				options: { baseURL: PROVIDER_BASE, ...userAnthropic.options },
 				models: { ...claudeDefs, ...userAnthropic.models },
 			};
@@ -189,8 +196,8 @@ export const CommandCodePlugin: Plugin = async (_input) => {
 			// hook); until then the open lane requires cmd login or options.apiKey.
 			const userOpenai = existing("command-code-openai");
 			cfg.provider["command-code-openai"] = {
-				npm: userOpenai.options ? undefined : "@ai-sdk/openai-compatible",
-				name: userOpenai.options ? undefined : "Command Code (OpenAI)",
+				npm: userOpenai.npm ?? "@ai-sdk/openai-compatible",
+				name: userOpenai.name ?? "Command Code (OpenAI)",
 				options: {
 					baseURL: PROVIDER_BASE,
 					...(openKey ? { apiKey: openKey } : {}),

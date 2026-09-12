@@ -22,7 +22,7 @@ mod main_tests;
 
 use std::io::Write;
 
-use crate::render::{BOLD, DIM, RESET};
+use crate::render::{BOLD, DIM, RESET, YELLOW};
 
 fn main() {
     let args = cli::parse_args();
@@ -158,7 +158,7 @@ fn main() {
 
     let cfg = config::load();
     let interval = args.interval.unwrap_or(cfg.interval_secs).clamp(1, 86_400);
-    let bar_width = args.bar_width.unwrap_or(cfg.bar_width).max(5);
+    let bar_width = args.bar_width.unwrap_or(cfg.bar_width).clamp(5, 200);
     // spend-burst sparkline is opt-in: -b/--bursts on the CLI turns it on for
     // this run; otherwise it follows the config flag (default off).
     let burst_on = args.bursts.is_some() || cfg.burst_enabled;
@@ -172,7 +172,16 @@ fn main() {
     };
     let notify_on_cap = cfg.notify_on_cap;
 
+    // Update check before any output. Watch mode draws the notice inside the
+    // redrawn frame (an eprintln sits outside the in-place UI and scrolls
+    // away); one-shot has no frame, so it goes to stderr. Report subcommands
+    // returned earlier, so this only covers the dashboard.
+    let update = update_check::check_sync();
+
     if args.once {
+        if let Some(msg) = &update {
+            eprintln!("{msg}");
+        }
         let s = snapshot::snapshot();
         if args.json {
             println!("{}", render::render_json(&s));
@@ -182,13 +191,6 @@ fn main() {
             print!("{}", render::render(&s, bar_width));
         }
         return;
-    }
-
-    // Watch mode: check update BEFORE first frame draw. check_sync() blocks
-    // once per day (≤5s); an async eprintln here could land mid-redraw and
-    // tear the in-place frame.
-    if let Some(msg) = update_check::check_sync() {
-        eprintln!("{msg}");
     }
 
     // live mode: true in-place redraw. Frame's last line = status line,
@@ -202,6 +204,17 @@ fn main() {
     let stdout = std::io::stdout();
     let mut out = stdout.lock();
     let mut prev_lines = 0usize;
+    // One-shot guards ANSI with color_enabled(); the watch path must too, or a
+    // pipe (e.g. `cmduse | tee`) leaks SGR. Reuse the same decision.
+    let use_color = render::color_enabled();
+    // Update notice rides inside the frame so it survives every redraw.
+    let update_line = update.as_ref().map(|m| {
+        if use_color && !args.plain {
+            format!("{YELLOW}{m}{RESET}\n")
+        } else {
+            format!("{m}\n")
+        }
+    });
     // deltas ($ per refresh) feed the spend-burst sparkline. Session-only:
     // no disk persistence — a fresh run shows a fresh trend, never old data.
     let mut history: Vec<f64> = Vec::new();
@@ -264,7 +277,7 @@ fn main() {
         }
         let text = if compact {
             compact_dashboard(&s, if burst_on { &history } else { &[] })
-        } else if args.plain {
+        } else if args.plain || !use_color {
             render::render_plain(&s)
         } else {
             render::render(&s, bar_width)
@@ -281,7 +294,10 @@ fn main() {
             String::new() // idle (all-zero deltas) → no row, no flat-line noise
         };
         let status_line = format!("{DIM}refreshing every {interval}s · ctrl-c to quit{RESET}");
-        let frame = format!("{text}{spark}{status_line}");
+        let frame = match &update_line {
+            Some(u) => format!("{u}{text}{spark}{status_line}"),
+            None => format!("{text}{spark}{status_line}"),
+        };
         prev_lines = redraw_frame(&mut out, &frame, prev_lines, (cols > 0).then_some(cols));
         out.flush().ok();
         // countdown: rewrite just the status line each second (cursor already on it)
@@ -330,6 +346,9 @@ fn notify_cap(window: &str) {
 /// (clip trims it first on very narrow windows).
 fn compact_dashboard(s: &crate::render::Snapshot, history: &[f64]) -> String {
     use crate::render::plan_name;
+    if let Some(e) = &s.err {
+        return format!("{BOLD}error{RESET} {e}\n");
+    }
     let cap = cmduse_core::plan_monthly_cap(&s.sub.plan_id);
     let cap_txt = cap.map(cmduse_core::money).unwrap_or_else(|| "-".into());
     let rem_txt = cmduse_core::money(s.credits.credits.monthly_credits);
@@ -642,7 +661,7 @@ fn statusline_cmd(args: &cli::Args) {
         let secs = cmduse_core::pace_eta(w.reset_at, dur, w.used, w.cap, now)?;
         Some(format!(
             "on pace to hit cap in {}",
-            cmduse_core::rel_time(Some(secs * 1000.0), Some(now))
+            cmduse_core::duration(secs as u64)
         ))
     };
     let h5_eta = eta_of(

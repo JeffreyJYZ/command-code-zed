@@ -14,14 +14,18 @@ export const FIVE_HOUR_SECS = 5 * 3600;
 export const WEEKLY_SECS = 7 * 86400;
 
 export function money(v: number): string {
-	return `$${v.toFixed(2)}`;
+	// Explicit multiply-round (half-away) before formatting: `toFixed` alone
+	// rounds the exact binary value, so 2.675 -> "2.67" while Rust's mirrored
+	// `(v*100).round()/100` gives "2.68". Conformance-pinned to cmduse_core.
+	return `$${(Math.round(v * 100) / 100).toFixed(2)}`;
 }
 
 /** Mirrors cmduse_core::compact. `toFixed` alone disagreed with Rust's `{:.1}`
  * at `.x5` ties; round half-away-from-zero explicitly so both ports match. */
 export function compact(n: number): string {
 	const round1 = (v: number) => Math.round(v * 10) / 10;
-	if (n >= 1_000_000) return `${round1(n / 1_000_000).toFixed(1)}M`;
+	// >=999_950 rounds to 1000.0K under the K bucket, so promote to M first.
+	if (n >= 999_950) return `${round1(n / 1_000_000).toFixed(1)}M`;
 	if (n >= 1_000) return `${round1(n / 1_000).toFixed(1)}K`;
 	return `${n}`;
 }
@@ -102,14 +106,15 @@ export function paceEta(
 	return secsToCap;
 }
 
-/** ISO 8601 → epoch ms. Handles trailing Z or a ±HH:MM / ±HHMM offset. */
+/** ISO 8601 → epoch ms. Handles trailing Z or a ±HH:MM / ±HHMM offset.
+ * Seconds are optional and fractional ms are preserved, matching
+ * cmduse_core::dates::parse_iso_utc. */
 export function parseIsoUtc(s: string): number | undefined {
 	const m = s.match(
-		/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)(Z|[+-]\d{2}:?\d{2})?$/,
+		/^(\d{4})-(\d{1,2})-(\d{1,2})T(\d{1,2}):(\d{1,2})(?::(\d{1,2}(?:\.\d+)?))?(Z|[+-]\d{2}:?\d{2}|[+-]\d{1,2})?$/,
 	);
 	if (!m) return undefined;
-	const [, y, mo, d, h, mi, sec, off] = m as unknown as [
-		string,
+	const [, y, mo, d, h, mi, secRaw, off] = m as unknown as [
 		string,
 		string,
 		string,
@@ -117,7 +122,11 @@ export function parseIsoUtc(s: string): number | undefined {
 		string,
 		string,
 		string | undefined,
+		string | undefined,
 	];
+	const sec = secRaw ? Number(secRaw) : 0;
+	const wholeSec = Math.floor(sec);
+	const ms = Math.round((sec - wholeSec) * 1000);
 	let offsetMs = 0;
 	if (off && off !== "Z") {
 		const sign = off.startsWith("-") ? -1 : 1;
@@ -126,7 +135,7 @@ export function parseIsoUtc(s: string): number | undefined {
 		const mm = Number(digits.slice(2, 4) || "0");
 		offsetMs = sign * (hh * 60 + mm) * 60_000;
 	}
-	return Date.UTC(+y, +mo - 1, +d, +h, +mi, Math.floor(+sec)) - offsetMs;
+	return Date.UTC(+y, +mo - 1, +d, +h, +mi, wholeSec, ms) - offsetMs;
 }
 
 /** Assemble the monthly window from the plan cap + subscription period:
@@ -142,7 +151,7 @@ export function monthlyWindow(
 	const resetAt = periodEnd ? parseIsoUtc(periodEnd) : undefined;
 	const start = periodStart ? parseIsoUtc(periodStart) : undefined;
 	const durSecs =
-		start !== undefined && resetAt !== undefined
+		start !== undefined && resetAt !== undefined && resetAt >= start
 			? Math.max(Math.floor((resetAt - start) / 1000), 1)
 			: undefined;
 	return { window: { used, cap, resetAt }, durSecs };
@@ -205,8 +214,9 @@ export function windowLine(
 
 export function plansTable(current: string): string {
 	// Mark by exact plan_name match (not substring): "individual-goat"
-	// contains "go", so substring matching double-marks the Go row.
-	const mine = planName(current);
+	// contains "go", so substring matching double-marks the Go row. Empty id
+	// = unknown plan: mark nothing (would otherwise fall through to "Free").
+	const mine = current ? planName(current) : "";
 	let out = "| Plan | Price | Credits/mo | 5-hour | Weekly |\n|---|---|---|---|---|\n";
 	for (const { name, price, monthly, fiveHour, weekly } of PLANS) {
 		const mark = name === mine ? "**" : "";
