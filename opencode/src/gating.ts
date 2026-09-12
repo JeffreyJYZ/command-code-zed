@@ -1,7 +1,7 @@
 // Gating DATA lives in ../../core/gating.json — single source shared with
 // cmduse-core's build.rs (Rust CLI uses the same tables). This file only adds
 // the TS types + canonicalization, and re-exports the data. Regen the JSON:
-// `bun run extract` (needs the installed Command Code CLI).
+// `bun run extract` from the repo root (needs the installed Command Code CLI).
 import data from "../../core/gating.json";
 
 export type Category = "opensource" | "premium";
@@ -41,7 +41,7 @@ export function warnIfGatingStale(): void {
 	if (days > GATE_STALE_DAYS) {
 		staleWarned = true;
 		console.warn(
-			`[command-code] gating snapshot is ${days}d old (CLI ${GATE_CLI_VERSION ?? "?"}) — run \`bun run extract\` in opencode/`,
+			`[command-code] gating snapshot is ${days}d old (CLI ${GATE_CLI_VERSION ?? "?"}) — run \`bun run extract\` from the repo root`,
 		);
 	}
 }

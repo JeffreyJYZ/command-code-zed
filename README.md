@@ -39,6 +39,7 @@ cargo clippy --all-targets -- -D warnings
 cargo build -p command-code-usage --target wasm32-wasip1 --release   # Zed ext
 cargo package -p cmduse-core --allow-dirty   # ships plans.json+gating.json
 cd opencode && bun install && bun test       # conformance vectors too
+bun run extract                              # regen core/gating.json (needs CLI)
 ```
 
 Shared truth lives in `core/`: `plans.json` (plan table/caps), `gating.json`

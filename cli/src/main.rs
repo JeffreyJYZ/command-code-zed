@@ -480,7 +480,7 @@ fn models_cmd(args: &cli::Args) {
         if let Some(days) = cmduse_core::gate_age_days(cmduse_core::dates::now_secs()) {
             if days > 30 {
                 eprintln!(
-                    "warning: gating snapshot is {days}d old (CLI {}) — run `bun run extract` in opencode/",
+                    "warning: gating snapshot is {days}d old (CLI {}) — run `bun run extract` from the repo root",
                     cmduse_core::GATE_CLI_VERSION
                 );
             }

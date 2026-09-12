@@ -8,7 +8,6 @@
 	"scripts": {
 		"build": "bun build src/index.ts --outdir dist --target bun --external @opencode-ai/plugin && tsc -p tsconfig.build.json",
 		"test": "bun test",
-		"extract": "bun run scripts/extract-gating.ts",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {

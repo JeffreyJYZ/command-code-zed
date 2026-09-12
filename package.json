@@ -1,0 +1,7 @@
+{
+	"name": "command-code-zed",
+	"private": true,
+	"scripts": {
+		"extract": "bun run scripts/extract-gating.ts"
+	}
+}

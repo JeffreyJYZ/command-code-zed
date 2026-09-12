@@ -1,7 +1,7 @@
 // Extracts Command Code's model-category + plan-gating tables from the installed
 // CLI bundle (cli.mjs) and writes core/gating.json (consumed by cmduse-core's
-// build.rs and the opencode plugin). Run via `bun run extract` after every
-// Command Code release that changes the catalog.
+// build.rs and the opencode plugin). Run from the repo root via
+// `bun run extract` after every Command Code release that changes the catalog.
 //
 // ponytail: regex-scrapes a minified bundle — breaks if Command Code renames the
 // Fr/Ur/Sr/wr minified vars; upgrade path is pinning a documented endpoint when
@@ -160,7 +160,7 @@ const out = {
 	hardBlocked,
 };
 writeFileSync(
-	new URL("../../core/gating.json", import.meta.url),
+	new URL("../core/gating.json", import.meta.url),
 	JSON.stringify(out, null, "\t") + "\n",
 );
 console.log(

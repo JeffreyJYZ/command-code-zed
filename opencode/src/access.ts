@@ -2,8 +2,8 @@ import { bareModel, type Category, canonicalizeModelId, HARD_BLOCKED, MODEL_CATE
 
 export { canonicalizeModelId, PLAN_RULES };
 
-// Port of Command Code CLI's evaluateModelAccess (see scripts/extract-gating.ts
-// for provenance). Any plan with purchased/free credits gets everything; unknown
+// Port of Command Code CLI's evaluateModelAccess (see repo-root
+// scripts/extract-gating.ts for provenance). Any plan with purchased/free credits gets everything; unknown
 // plan ids get everything (API enforces the real limit anyway).
 
 export type PlanLike = {

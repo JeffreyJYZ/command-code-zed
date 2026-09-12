@@ -41,7 +41,7 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (no core crate;
 - **Plan data lives in `core/plans.json`, gating data in `core/gating.json`,
   never in code.** `core/build.rs` bakes both into Rust consts; `opencode`
   imports the same files. Edit the JSON, not the generated consts or the TS.
-  `opencode/scripts/extract-gating.ts` regenerates `gating.json` from the
+  repo-root `scripts/extract-gating.ts` regenerates `gating.json` from the
   installed Command Code CLI bundle (`bun run extract`); the hand-probed
   `hardBlocked` entries live in that script. The file carries `extractedAt`
   + `cliVersion`; cli and opencode warn when the snapshot is >30d old, and
