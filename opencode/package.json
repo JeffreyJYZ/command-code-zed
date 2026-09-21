@@ -1,17 +1,18 @@
 {
 	"name": "@jeffreyjyz/opencode-command-code",
-	"version": "0.1.7",
-	"description": "Command Code provider + usage dashboard for opencode: two providers (Anthropic wire for Claude, OpenAI wire for everything else) against api.commandcode.ai, live model list, plan gating, /cmd-usage.",
+	"version": "0.2.0",
+	"description": "Command Code provider + usage dashboard for opencode: two providers (Anthropic wire for Claude, OpenAI wire for everything else) against api.commandcode.ai, live model list, plan gating, /cmd-usage. Requires the cmduse CLI for usage rendering.",
 	"type": "module",
 	"main": "dist/index.js",
 	"types": "dist/index.d.ts",
 	"scripts": {
-		"build": "bun build src/index.ts --outdir dist --target bun --external @opencode-ai/plugin && tsc -p tsconfig.build.json",
+		"build": "rm -rf dist && bun build src/index.ts --outdir dist --target bun --external @opencode-ai/plugin --external @opencode/plugin && tsc -p tsconfig.build.json",
 		"test": "bun test",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@opencode-ai/plugin": "*"
+		"@opencode-ai/plugin": "*",
+		"@opencode/plugin": "^2.0.11"
 	},
 	"devDependencies": {
 		"@types/bun": "latest",

@@ -1,11 +1,16 @@
-import type { Plugin } from "@opencode-ai/plugin";
+// Dual OpenCode entrypoint (one default export carries both APIs):
+//   v1 (>=1.18.29) calls `server()` and consumes the returned hook map
+//   v2 (>=2.0.0)   decodes `{ id, setup }` and calls `setup(context)`
+// The two halves are independent implementations; v2 does not translate v1
+// hooks. Both share ./cli.ts: usage rendering is delegated to the cmduse CLI
+// (Rust cmduse-core) rather than reimplemented in TS.
+import type { Plugin as PluginV1 } from "@opencode-ai/plugin";
 import { tool } from "@opencode-ai/plugin";
 import { API_BASE, whoami } from "./api";
+import { runCmduse } from "./cli";
 import { resolveKey } from "./key";
 import { loadModels } from "./models";
-import { plansTable, renderUsage } from "./usage";
-
-const PROVIDER_BASE = `${API_BASE}/provider/v1`;
+import { commandCodeV2, PROVIDER_BASE } from "./v2";
 
 type SdkModel = {
 	id: string;
@@ -75,7 +80,7 @@ function toModelDefs(
 	);
 }
 
-export const CommandCodePlugin: Plugin = async (_input) => {
+export const CommandCodePlugin: PluginV1 = async (_input) => {
 	return {
 		// /connect entry for the Claude lane. The open lane (`command-code`) is
 		// intended to share the key via the user's existing manual config or via
@@ -236,16 +241,21 @@ export const CommandCodePlugin: Plugin = async (_input) => {
 					arg: tool.schema
 						.string()
 						.optional()
-						.describe("Optional: 'plans' for the plan table only"),
+						.describe("Optional: 'plans' for the plan table only, or extra cmduse flags"),
 				},
+				// Rendering lives in the cmduse binary (Rust core); this is a thin
+				// spawn wrapper. Piped stdout is plain text (colors auto-off).
 				async execute(args) {
-					if (args.arg === "plans") return plansTable("");
 					const key = await resolveKey();
-					return renderUsage(key);
+					return runCmduse(args.arg ?? "", { env: { CMD_API_KEY: key } });
 				},
 			}),
 		},
 	};
 };
 
-export default CommandCodePlugin;
+export default {
+	...commandCodeV2,
+	/** v1 entrypoint (opencode >=1.18.29 object entrypoints). */
+	server: CommandCodePlugin,
+};

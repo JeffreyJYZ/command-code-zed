@@ -8,7 +8,8 @@
 Everything Command Code (commandcode.ai) usage: a terminal dashboard, a Zed
 slash command, and an opencode provider. One Cargo workspace shares the plan
 table and window math via `cmduse-core`; the opencode plugin is a separate TS
-package that imports the same JSON.
+package that registers the providers and delegates usage rendering to the
+`cmduse` CLI.
 
 ## Components
 
@@ -44,8 +45,37 @@ bun run extract                              # regen core/gating.json (needs CLI
 
 Shared truth lives in `core/`: `plans.json` (plan table/caps), `gating.json`
 (model categories + per-plan access), `conformance.json` (behavior vectors).
-`core/build.rs` bakes plans/gating into Rust consts; `opencode` imports the
-same JSON, and both sides assert the vectors so the ports can't drift.
+`core/build.rs` bakes plans/gating into Rust consts; the opencode plugin's
+model-gating layer imports `gating.json` and asserts the gating subset of the
+vectors (usage/window math is the Rust core's alone since plugin 0.2.0).
+
+## opencode plugin
+
+Providers (`command-code-anthropic`, `command-code-openai`), a live gated
+model list, `/cmd-usage`, and the `cmd_usage` tool — for **both opencode v1
+(≥1.18.29) and v2 (≥2.0.0)** from one package.
+
+Requires the `cmduse` CLI (usage windows/pace rendering live in the Rust
+core — the plugin spawns it):
+
+```sh
+brew install JeffreyJYZ/tap/cmduse
+```
+
+Install:
+
+```jsonc
+// opencode v2: "plugins"; v1: "plugin" (auto-normalized)
+{
+  "plugins": ["@jeffreyjyz/opencode-command-code"]
+}
+```
+
+Auth resolves `CMD_API_KEY`, then `~/.commandcode/auth.json` (`cmd login`).
+Under opencode v2's background service, shell env vars often don't reach the
+server — prefer `cmd login` or `providers.command-code-*.settings.apiKey` in
+`opencode.jsonc`. Without a key the providers register disabled with a
+warning in the server log.
 
 ## Why the split
 

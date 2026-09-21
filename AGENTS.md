@@ -27,8 +27,10 @@ cli/               cmd-usage (bin `cmduse`), published to crates.io
   src/…            thin UI: api client, snapshot, ANSI rendering, reports, redraw
 zed-ext/           command-code-usage Zed extension (WASM, markdown output)
   src/lib.rs       thin UI: HTTP via zed API, markdown window/plans render
-opencode/          @jeffreyjyz/opencode-command-code TS plugin (no core crate;
-                   imports ../../core/{plans,gating,conformance}.json directly)
+opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
+                   v1 (server()) + v2 (setup()) entrypoints; no core crate;
+                   imports ../../core/{gating,conformance}.json; usage
+                   rendering delegates to the cmduse CLI via src/cli.ts)
 ```
 
 ## Core rules
@@ -47,10 +49,13 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (no core crate;
   + `cliVersion`; cli and opencode warn when the snapshot is >30d old, and
   both warn when the API returns a plan id no `plans.json` rule matches
   (the dashboard would otherwise silently show "Free" with no cap).
-- **Behavior vectors live in `core/conformance.json`.** Rust (`core` test) and
-  TS (`opencode/test/conformance.test.ts`) both run it, so the two language
-  ports of money/compact/pct/duration/rel_time/parse_iso_utc/elapsed_pct/
-  pace_eta/monthly_window/plan_*/gating/bare_model/canonicalize can't drift.
+- **Behavior vectors live in `core/conformance.json`.** Rust (`core` test)
+  asserts them all. Since plugin 0.2.0 the TS port (`opencode/test/
+  conformance.test.ts`) covers only the still-ported model-gating layer
+  (bare_model/canonicalize/gating) — money/compact/pct/duration/rel_time/
+  parse_iso_utc/elapsed_pct/pace_eta/monthly_window/plan_* have a single
+  implementation (Rust core) because the opencode plugin spawns the cmduse
+  CLI for all usage rendering instead of porting that logic.
 - `core` keeps adapters out: cli wraps `rel_time`/`elapsed_pct` to its
   `u64`-now signatures; zed-ext uses core's `Option<u64>` forms directly.
 - Window caps (5-hour/weekly) come from the API `Window.cap` response, NOT
@@ -92,8 +97,10 @@ cd opencode && bun test && bun run typecheck
   (`curl -sL https://static.crates.io/crates/cmd-usage/cmd-usage-<v>.crate | shasum -a 256`).
 - README/AGENTS updated in the same commit.
 - The opencode npm package (`opencode/package.json`) is versioned
-  **independently** of the Rust workspace (0.1.x vs 0.6.x) — intentional, not
-  drift. Don't sync them.
+  **independently** of the Rust workspace (0.2.x vs 0.6.x) — intentional, not
+  drift. Don't sync them. 0.2.0 added opencode v2 support (dual v1+V2
+  entrypoint, `@opencode/plugin` + `@opencode-ai/plugin` deps, both external
+  in the bun build; v1 floor is the 1.18.29 object entrypoint).
 - **npm publish is interactive: it fails from the agent shell** (`EOTP`, prints
   an auth URL). Build first (`cd opencode && bun run build`) so `dist/` is
   current, then the user runs plain `npm publish` themselves — it opens a

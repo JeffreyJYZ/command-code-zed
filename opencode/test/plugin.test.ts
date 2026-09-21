@@ -2,12 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { canonicalizeModelId, evaluateModelAccess } from "../src/access";
 import { MODEL_CATEGORIES, PLAN_RULES } from "../src/gating";
 import { isClaude, splitModels } from "../src/models";
-import { bar, FIVE_HOUR_SECS, pctStr, plansTable, windowLine } from "../src/usage";
 
-// money/compact/relTime/parseIsoUtc/planName/planMonthlyCap and the core gating
-// behavior are pinned by conformance.test.ts (shared vectors). This file covers
-// only TS-specific logic: canonicalization, wire split, table/status rendering,
-// and gating edges not represented as vectors.
+// money/compact/relTime/parseIsoUtc and the plan name/cap table left the TS
+// port with the cmduse-CLI delegation (src/usage.ts removed) — the Rust core
+// is now the only implementation. The gating access layer stays TS and is
+// pinned by conformance.test.ts (shared vectors). This file covers only
+// TS-specific logic: canonicalization, wire split, and gating edges not
+// represented as vectors.
 
 const goat = { planId: "individual-goat", purchasedCredits: 0, freeCredits: 0 };
 
@@ -82,46 +83,5 @@ describe("wire split", () => {
 		]);
 		expect(claude.map((m) => m.id)).toEqual(["claude-sonnet-5"]);
 		expect(open.map((m) => m.id)).toEqual(["gpt-5.5"]);
-	});
-});
-
-describe("usage render", () => {
-	test("bar", () => {
-		expect(bar(0, 10)).toBe("░".repeat(12));
-		expect(bar(10, 10)).toBe("█".repeat(12));
-		expect(bar(6, 10).split("█").length - 1).toBe(7);
-	});
-	test("pctStr", () => {
-		expect(pctStr(5, 10)).toBe("50%");
-		expect(pctStr(5, 0)).toBe("—");
-	});
-	test("windowLine", () => {
-		const line = windowLine("5-hour", { used: 7, cap: 14, resetAt: 120_000 }, 60);
-		expect(line).toContain("**5-hour**");
-		expect(line).not.toContain("LIMIT EXCEEDED");
-		expect(line).toContain("$7.00 of $14.00");
-		const exceeded = windowLine(
-			"5-hour",
-			{ used: 15, cap: 14, exceeded: true, resetAt: 120_000 },
-			60,
-		);
-		expect(exceeded).toContain("LIMIT EXCEEDED");
-	});
-	test("windowLine adds elapsed% and pace when duration is known", () => {
-		const now = 1_000_000;
-		// 10% elapsed, spend rate on track to hit cap before reset
-		const pace = windowLine(
-			"5-hour",
-			{ used: 5, cap: 10, resetAt: 1_016_200_000 },
-			now,
-			FIVE_HOUR_SECS,
-		);
-		expect(pace).toContain("window 10% elapsed");
-		expect(pace).toContain("on pace to hit cap in 30m");
-	});
-	test("plansTable marks current", () => {
-		const t = plansTable("individual-goat");
-		expect(t).toContain("**GOAT**");
-		expect(t).toContain("| Plan | Price |");
 	});
 });

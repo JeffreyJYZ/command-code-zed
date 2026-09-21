@@ -22,6 +22,7 @@ export const HARD_BLOCKED = data.hardBlocked as Record<string, string[]>;
 
 /** canonical known model ids (lowercase compare) */
 const KNOWN_MODELS = data.knownModels as string[];
+export { KNOWN_MODELS };
 
 /** deprecated/aliased model id -> canonical id */
 const MODEL_ALIASES = data.aliases as Record<string, string>;
