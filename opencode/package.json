@@ -23,7 +23,7 @@
 		"solid-js": "^1.9.0",
 		"typescript": "^5"
 	},
-	"files": ["dist", "LICENSE"],
+	"files": ["dist", "tui.js", "LICENSE"],
 	"keywords": ["opencode", "command-code", "plugin", "provider", "ai-sdk"],
 	"license": "MIT",
 	"publishConfig": {
