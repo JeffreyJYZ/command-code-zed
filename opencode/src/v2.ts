@@ -121,22 +121,10 @@ export const commandCodeV2 = Plugin.define({
 			}
 		});
 
-		await ctx.command.transform((editor) => {
-			editor.add({
-				name: "cmd-usage",
-				description: "Show Command Code plan, credits, and usage windows",
-				execute: async ({ sessionID, prompt }) => {
-					const arg = typeof prompt?.text === "string" ? prompt.text : "";
-					let text: string;
-					try {
-						text = await runCmduse(arg, { env: key ? { CMD_API_KEY: key } : undefined });
-					} catch (e) {
-						text = `cmd-usage failed: ${e instanceof Error ? e.message : String(e)}`;
-					}
-					await ctx.session.synthetic({ sessionID, text: `**/cmd-usage**\n\n${text}` });
-				},
-			});
-		});
+		// NOTE: no server-side /cmd-usage command here — synthetic messages are
+		// model-visible but not rendered in the TUI, and a prompt-based command
+		// costs an LLM round-trip. The user-facing slash command lives in the
+		// TUI half (src/tui.ts, dist/tui.js via the package ./tui export).
 
 		await ctx.tool.transform((editor) => {
 			editor.add({

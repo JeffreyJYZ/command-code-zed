@@ -31,6 +31,9 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
                    v1 (server()) + v2 (setup()) entrypoints; no core crate;
                    imports ../../core/{gating,conformance}.json; usage
                    rendering delegates to the cmduse CLI via src/cli.ts)
+  src/tui.ts       CLI/TUI half (package ./tui export): /usage slash command
+                   spawns cmduse client-side and renders in a dialog — the
+                   server half's synthetic messages are not TUI-visible
 ```
 
 ## Core rules
@@ -98,7 +101,9 @@ cd opencode && bun test && bun run typecheck
   **independently** of the Rust workspace (0.2.x vs 0.6.x) — intentional, not
   drift. Don't sync them. 0.2.0 added opencode v2 support (dual v1+V2
   entrypoint, `@opencode/plugin` + `@opencode-ai/plugin` deps, both external
-  in the bun build; v1 floor is the 1.18.29 object entrypoint).
+  in the bun build; v1 floor is the 1.18.29 object entrypoint); 0.2.x also
+  ships a TUI half (`./tui` export → `src/tui.ts`, `solid-js` devDep for the
+  test runner only — opencode resolves the TUI import at runtime).
 - **npm publish is interactive: it fails from the agent shell** (`EOTP`, prints
   an auth URL). Build first (`cd opencode && bun run build`) so `dist/` is
   current, then the user runs plain `npm publish` themselves — it opens a

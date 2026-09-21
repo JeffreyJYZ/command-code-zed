@@ -50,8 +50,9 @@ vectors (usage/window math is the Rust core's alone since plugin 0.2.0).
 ## opencode plugin
 
 Providers (`command-code-anthropic`, `command-code-openai`), a live gated
-model list, `/cmd-usage`, and the `cmd_usage` tool — for **both opencode v1
-(≥1.18.29) and v2 (≥2.0.0)** from one package.
+model list, `/usage` (TUI slash command, alias `/cmd-usage`), and the
+`cmd_usage` tool — for **both opencode v1 (≥1.18.29) and v2 (≥2.0.0)** from
+one package.
 
 Requires the `cmduse` CLI (usage windows/pace rendering live in the Rust
 core — the plugin spawns it):
