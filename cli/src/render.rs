@@ -377,9 +377,9 @@ pub fn render_plain(s: &Snapshot) -> String {
     o
 }
 
-/// One plain (no-SGR) window line: usage %, dollars, reset countdown, and how
-/// much of the window has elapsed. Mirrors `window_line` minus colors.
-fn plain_window_line(
+/// One plain (no-SGR) window line: usage %, dollars, reset countdown, elapsed
+/// share, and the burn-rate pace warning. Mirrors `window_line` minus colors.
+pub(crate) fn plain_window_line(
     label: &str,
     w: &crate::api::Window,
     now: u64,
@@ -394,9 +394,18 @@ fn plain_window_line(
         .and_then(|d| elapsed_pct(w.reset_at, d, now))
         .map(|p| format!(" · window {p}% elapsed"))
         .unwrap_or_default();
+    // burn-rate projection, same as the colored dashboard: flat-spend estimate
+    // of when the cap is hit at the current rate.
+    let pace = dur_secs
+        .and_then(|d| {
+            cmduse_core::pace_eta(w.reset_at, d, w.used, w.cap, now)
+                .map(|secs| cmduse_core::duration(secs as u64))
+        })
+        .map(|eta| format!(" · on pace to hit cap in {eta}"))
+        .unwrap_or_default();
     let flag = if w.exceeded { " · LIMIT EXCEEDED" } else { "" };
     format!(
-        "{label}: {pct:.0}% ({} / {}) · resets in {}{elapsed}{flag}\n",
+        "{label}: {pct:.0}% ({} / {}) · resets in {}{elapsed}{pace}{flag}\n",
         money(w.used),
         money(w.cap),
         rel_time(w.reset_at, now),

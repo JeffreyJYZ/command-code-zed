@@ -191,6 +191,43 @@ fn render_free_plan_no_monthly_cap() {
     assert!(out_plain.contains("$61.44 monthly"));
 }
 
+#[test]
+fn plain_window_line_has_elapsed_and_pace() {
+    // 10% elapsed, spend rate on track to hit cap before reset — same shape
+    // the colored window_line test pins, so the two renderers agree.
+    let now = 1_000_000;
+    let w = crate::api::Window {
+        used: 5.0,
+        cap: 10.0,
+        exceeded: false,
+        reset_at: Some(1_016_200_000.0),
+    };
+    let line = crate::render::plain_window_line("5-hour", &w, now, Some(18_000));
+    assert!(line.contains("window 10% elapsed"), "{line}");
+    assert!(line.contains("on pace to hit cap in"), "{line}");
+    assert!(
+        !line.contains("\x1b"),
+        "plain output must carry no SGR: {line}"
+    );
+}
+
+#[test]
+fn plain_window_line_flags_exceeded() {
+    let now = 1_000_000;
+    let w = crate::api::Window {
+        used: 15.0,
+        cap: 10.0,
+        exceeded: true,
+        reset_at: Some(1_016_200_000.0),
+    };
+    let line = crate::render::plain_window_line("Weekly", &w, now, None);
+    assert!(line.contains("LIMIT EXCEEDED"), "{line}");
+    assert!(
+        !line.contains("elapsed"),
+        "no duration → no elapsed: {line}"
+    );
+}
+
 fn snapshot_fixture() -> Snapshot {
     Snapshot {
         sub: crate::api::SubData {

@@ -186,8 +186,10 @@ In watch mode it keeps the plain text render but still redraws in place.
 Colors are also dropped automatically on a non\-terminal stdout or when
 \fBNO_COLOR\fR is set.
 The plain render carries the same fields as the colored dashboard: period end,
-monthly quota (remaining / cap), a Monthly allowance row, and
-"window N% elapsed" on every window row.
+monthly quota (remaining / cap), a Monthly allowance row,
+"window N% elapsed" on every window row, and the
+"on pace to hit cap in ..." burn\-rate warning when the current rate reaches
+the cap before the window resets.
 .TP
 .B \-i, \-\-interval \fIdur\fR
 Refresh interval (1\(en86400 seconds).  Accepts a unit suffix:
