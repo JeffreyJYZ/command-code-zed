@@ -91,6 +91,12 @@ fn pace_warns_only_after_10pct_elapsed() {
         line.contains("on pace to hit cap in 30m"),
         "ETA must render the duration, not an absolute reset: {line}"
     );
+    // importance order: pace before elapsed, so width-clipped watch frames
+    // keep the warning and drop the informational elapsed share
+    assert!(
+        line.find("on pace").unwrap() < line.find("window 10%").unwrap(),
+        "pace must precede elapsed: {line}"
+    );
 }
 
 #[test]
@@ -205,6 +211,12 @@ fn plain_window_line_has_elapsed_and_pace() {
     let line = crate::render::plain_window_line("5-hour", &w, now, Some(18_000));
     assert!(line.contains("window 10% elapsed"), "{line}");
     assert!(line.contains("on pace to hit cap in"), "{line}");
+    // importance order: pace (actionable) before elapsed (informational), so a
+    // width-clipped watch frame drops elapsed first
+    assert!(
+        line.find("on pace").unwrap() < line.find("window 10%").unwrap(),
+        "{line}"
+    );
     assert!(
         !line.contains("\x1b"),
         "plain output must carry no SGR: {line}"

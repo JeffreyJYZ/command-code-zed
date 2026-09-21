@@ -160,6 +160,9 @@ pub fn window_line(
     } else {
         String::new()
     };
+    // Field order is importance order: watch frames get clipped to the
+    // terminal width from the right, so the actionable parts (limit flag,
+    // pace warning) must sit before the informational elapsed share.
     let thru = dur_secs
         .and_then(|d| elapsed_pct(w.reset_at, d, now))
         .map(|p| format!(" · {DIM}window {p}% elapsed{RESET}"))
@@ -175,7 +178,7 @@ pub fn window_line(
         .map(|eta| format!(" · {YELLOW}on pace to hit cap in {eta}{RESET}"))
         .unwrap_or_default();
     format!(
-        " {BOLD}{label:<8}{RESET} {} {DIM}{} / {} · resets in {}{thru}{pace}{RESET}{flag}",
+        " {BOLD}{label:<8}{RESET} {} {DIM}{} / {} · resets in {}{flag}{pace}{thru}{RESET}",
         bar(w.used, w.cap, bar_width),
         money(w.used),
         money(w.cap),
@@ -404,8 +407,10 @@ pub(crate) fn plain_window_line(
         .map(|eta| format!(" · on pace to hit cap in {eta}"))
         .unwrap_or_default();
     let flag = if w.exceeded { " · LIMIT EXCEEDED" } else { "" };
+    // Same importance order as the colored renderer: clipped watch frames must
+    // keep the flag and the pace warning before the elapsed share.
     format!(
-        "{label}: {pct:.0}% ({} / {}) · resets in {}{elapsed}{pace}{flag}\n",
+        "{label}: {pct:.0}% ({} / {}) · resets in {}{flag}{pace}{elapsed}\n",
         money(w.used),
         money(w.cap),
         rel_time(w.reset_at, now),
