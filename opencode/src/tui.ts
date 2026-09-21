@@ -16,37 +16,47 @@ import { runCmduse } from "./cli"
 export default Plugin.define({
 	id: "command-code.tui",
 	setup(context) {
-		context.keymap.layer(() => ({
-			mode: "global",
-			priority: 10,
-			commands: [
-				{
-					id: "command-code.usage",
-					title: "Command Code usage",
-					group: "Command Code",
-					// `/usage` is the primary name; `/cmd-usage` kept as the alias
-					// users know from the plugin docs.
-					slash: { name: "usage", aliases: ["cmd-usage"], arguments: true },
-					suggested: true,
-					run: async (input) => {
-						let text: string
-						try {
-							text = await runCmduse(input ?? "")
-						} catch (e) {
-							context.ui.toast.show({
-								title: "cmd-usage failed",
-								message: e instanceof Error ? e.message : String(e),
-								variant: "error",
-							})
-							return
-						}
-						await context.ui.dialog.alert({
+		// keymap.layer() creates a layer "owned by the calling component", so it
+		// must run inside a render — registering it directly in setup throws
+		// "Keymap.Provider is missing". Mount a no-op contribution on the app
+		// slot and register the layer from its render.
+		context.ui.slot({
+			append: "app",
+			render: () => {
+				context.keymap.layer(() => ({
+					mode: "global",
+					priority: 10,
+					commands: [
+						{
+							id: "command-code.cmd-usage",
 							title: "Command Code usage",
-							message: text.trimEnd(),
-						})
-					},
-				},
-			],
-		}))
+							group: "Command Code",
+							slash: { name: "cmd-usage", arguments: true },
+							enabled: () => true,
+							suggested: true,
+							run: async (input) => {
+								let text: string
+								try {
+									text = await runCmduse(input ?? "")
+								} catch (e) {
+									context.ui.toast.show({
+										title: "cmd-usage failed",
+										message: e instanceof Error ? e.message : String(e),
+										variant: "error",
+									})
+									return
+								}
+								await context.ui.dialog.alert({
+									title: "Command Code usage",
+									message: text.trimEnd(),
+								})
+							},
+						},
+					],
+					bindings: ["command-code.cmd-usage"],
+				}))
+				return null
+			},
+		})
 	},
 })

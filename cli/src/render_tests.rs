@@ -152,7 +152,13 @@ fn plain_render_contains_sections() {
     assert!(out.contains("Credits:"));
     assert!(out.contains("5-hour:"));
     assert!(out.contains("Weekly:"));
+    assert!(out.contains("Monthly:"));
     assert!(out.contains("Period:"));
+    // parity with the colored dashboard: monthly quota, period end, and
+    // elapsed share of each window
+    assert!(out.contains("/ $70.00 monthly"));
+    assert!(out.contains("Period ends "));
+    assert!(out.contains("window ") && out.contains("% elapsed"));
 }
 
 #[test]

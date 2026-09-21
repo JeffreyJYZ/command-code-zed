@@ -321,36 +321,50 @@ pub fn render_plain(s: &Snapshot) -> String {
         plan_name(&s.sub.plan_id),
         s.sub.status
     ));
-    o.push_str(&format!(
-        "Credits: {} monthly, {} purchased, {} free\n",
-        money(s.credits.credits.monthly_credits),
-        money(s.credits.credits.purchased_credits),
-        money(s.credits.credits.free_credits),
-    ));
+    if let Some(end) = &s.sub.current_period_end {
+        o.push_str(&format!("Period ends {}\n", &end[..10.min(end.len())]));
+    }
+    let monthly_cap = plan_monthly_cap(&s.sub.plan_id);
+    match monthly_cap {
+        Some(cap) => o.push_str(&format!(
+            "Credits: {} / {} monthly, {} purchased, {} free\n",
+            money(s.credits.credits.monthly_credits),
+            money(cap),
+            money(s.credits.credits.purchased_credits),
+            money(s.credits.credits.free_credits),
+        )),
+        None => o.push_str(&format!(
+            "Credits: {} monthly, {} purchased, {} free\n",
+            money(s.credits.credits.monthly_credits),
+            money(s.credits.credits.purchased_credits),
+            money(s.credits.credits.free_credits),
+        )),
+    }
+    // Monthly allowance window (cap from the plan table, reset from the
+    // subscription period) — same math as the colored dashboard.
+    if let Some(cap) = monthly_cap {
+        let (w, dur) = cmduse_core::monthly_window(
+            cap,
+            s.credits.credits.monthly_credits,
+            s.sub.current_period_start.as_deref(),
+            s.sub.current_period_end.as_deref(),
+        );
+        o.push_str(&plain_window_line("Monthly", &w, s.now, dur));
+    }
     if let Some(w) = &s.credits.window_limits.five_hour {
-        o.push_str(&format!(
-            "5-hour: {:.0}% ({} / {}) · resets in {}\n",
-            if w.cap > 0.0 {
-                w.used / w.cap * 100.0
-            } else {
-                0.0
-            },
-            money(w.used),
-            money(w.cap),
-            rel_time(w.reset_at, s.now),
+        o.push_str(&plain_window_line(
+            "5-hour",
+            w,
+            s.now,
+            Some(cmduse_core::FIVE_HOUR_SECS),
         ));
     }
     if let Some(w) = &s.credits.window_limits.weekly {
-        o.push_str(&format!(
-            "Weekly: {:.0}% ({} / {}) · resets in {}\n",
-            if w.cap > 0.0 {
-                w.used / w.cap * 100.0
-            } else {
-                0.0
-            },
-            money(w.used),
-            money(w.cap),
-            rel_time(w.reset_at, s.now),
+        o.push_str(&plain_window_line(
+            "Weekly",
+            w,
+            s.now,
+            Some(cmduse_core::WEEKLY_SECS),
         ));
     }
     o.push_str(&format!(
@@ -361,6 +375,32 @@ pub fn render_plain(s: &Snapshot) -> String {
         compact(s.summary.total_tokens_out.unwrap_or(0)),
     ));
     o
+}
+
+/// One plain (no-SGR) window line: usage %, dollars, reset countdown, and how
+/// much of the window has elapsed. Mirrors `window_line` minus colors.
+fn plain_window_line(
+    label: &str,
+    w: &crate::api::Window,
+    now: u64,
+    dur_secs: Option<u64>,
+) -> String {
+    let pct = if w.cap > 0.0 {
+        w.used / w.cap * 100.0
+    } else {
+        0.0
+    };
+    let elapsed = dur_secs
+        .and_then(|d| elapsed_pct(w.reset_at, d, now))
+        .map(|p| format!(" · window {p}% elapsed"))
+        .unwrap_or_default();
+    let flag = if w.exceeded { " · LIMIT EXCEEDED" } else { "" };
+    format!(
+        "{label}: {pct:.0}% ({} / {}) · resets in {}{elapsed}{flag}\n",
+        money(w.used),
+        money(w.cap),
+        rel_time(w.reset_at, now),
+    )
 }
 
 /// ASCII cost trend: 8-point sparkline, last `cap` samples of $ spent.

@@ -33,6 +33,10 @@ cmduse                       # live dashboard, redraws in place (default every 5
 cmduse -1                    # one-shot fetch, print, exit
 cmduse -V                    # print version
 cmduse -p -1                 # plain output, no ANSI (for scripts/pipes)
+                             # same fields as the colored dashboard: period end,
+                             # monthly quota, Monthly row, window % elapsed
+                             # (also what the MCP `usage` tool and the opencode
+                             # /cmd-usage dialog render)
 cmduse -i 30                 # refresh every 30s
 cmduse -i 5m                 # duration suffixes: s, m, h, d
 cmduse -w 40                 # 40-char progress bars
