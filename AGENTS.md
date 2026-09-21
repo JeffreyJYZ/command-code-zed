@@ -109,6 +109,15 @@ cd opencode && bun test && bun run typecheck
   current, then the user runs plain `npm publish` themselves — it opens a
   browser to authenticate, no `--otp` needed. Never treat an `EOTP` failure as
   published — verify with `npm view @jeffreyjyz/opencode-command-code version`.
+- After publishing a plugin version, opencode may keep resolving the previous
+  one: its per-package install cache (`~/.cache/opencode/npm/<pkg>@latest/`) is
+  built from a **cached npm packument**, which can lag the registry for
+  minutes. Bump steps: `npm cache clean --force`, `rm -rf
+  ~/.cache/opencode/npm/@jeffreyjyz/opencode-command-code@latest`, then
+  `opencode service restart` and confirm the version in `opencode plugin list`.
+  (`npm install --prefer-online` proves the registry has the new version.)
+  Temporary workaround if the cache is stubborn: pin the specifier to the exact
+  version in the user's `plugins` array.
 
 ## Learned-the-hard-way
 
