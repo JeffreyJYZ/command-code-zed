@@ -23,6 +23,9 @@ import { isClaude, loadModels, type CmdModel } from "./models";
 
 export const PLUGIN_ID = "command-code";
 export const PROVIDER_BASE = "https://api.commandcode.ai/provider/v1";
+/** Shared integration backing both lanes' credentials (/connect + env). */
+export const INTEGRATION_ID = "command-code";
+export const INTEGRATION_NAME = "Command Code";
 
 type Lane = {
 	id: "command-code-anthropic" | "command-code-openai";
@@ -86,21 +89,83 @@ export function staticSeedModels(): Record<Lane["id"], unknown[]> {
 	return seed;
 }
 
+/** The slice of the plugin context the credential resolver needs. */
+type CredentialContext = {
+	integration: {
+		connection: {
+			active(integrationID: string): Promise<unknown>;
+			resolve(connection: unknown): Promise<unknown>;
+		};
+	};
+};
+
+/** Credential for spawning cmduse, host-first: a key stored by /connect lives
+ * only in opencode's credential store, so ask the connection before falling
+ * back to CMD_API_KEY / ~/.commandcode/auth.json. Resolved per call — a
+ * /connect mid-session must be picked up. */
+export async function credentialKey(ctx: CredentialContext): Promise<string | undefined> {
+	try {
+		const connection = await ctx.integration.connection.active(INTEGRATION_ID);
+		if (connection) {
+			const credential = (await ctx.integration.connection.resolve(connection)) as
+				| { type: "key"; key: string }
+				| { type: "oauth"; access: string }
+				| undefined;
+			if (credential?.type === "key") return credential.key;
+			if (credential?.type === "oauth") return credential.access;
+		}
+	} catch {}
+	try {
+		return await resolveKey();
+	} catch {
+		return undefined;
+	}
+}
+
 export const commandCodeV2 = Plugin.define({
 	id: PLUGIN_ID,
 	async setup(ctx) {
-		// Resolved once per load: env override, then ~/.commandcode/auth.json
-		// (same order as cmduse). No key = providers registered disabled + warn
-		// (a degraded registration beats a plugin that will not load).
-		let key: string | undefined;
+		// Credential sources, in host order of authority:
+		//  1. the opencode connection for our integration (`/connect`, or the
+		//     env method reading CMD_API_KEY on the server process)
+		//  2. our own fallback: CMD_API_KEY here, then ~/.commandcode/auth.json
+		//     (`cmd login`) — resolves users who never /connect-ed.
+		// The host injects (1) into the provider runtime; (2) we inject as
+		// settings.apiKey. Neither → activation "auto": availability follows the
+		// integration connection, so a later /connect lights the provider up
+		// without a plugin reload.
+		let localKey: string | undefined;
 		try {
-			key = await resolveKey();
+			localKey = await resolveKey();
 		} catch {}
-		if (!key) {
+		let hasConnection = false;
+		try {
+			hasConnection = (await ctx.integration.connection.active(INTEGRATION_ID)) !== undefined;
+		} catch {}
+		if (!localKey && !hasConnection) {
 			console.warn(
-				"[command-code] no API key found — providers registered disabled. `cmd login` (~/.commandcode/auth.json), CMD_API_KEY, or providers.command-code-*.settings.apiKey in opencode.jsonc, then restart.",
+				`[command-code] no API key found. Run /connect and choose "${INTEGRATION_NAME}", or \`cmd login\` (~/.commandcode/auth.json), or set CMD_API_KEY.`,
 			);
 		}
+
+		// /connect entry + env discovery for both lanes. Methods are additive
+		// registrations on the shared integration id; the missing-record seed
+		// behaves like the provider seed.
+		await ctx.integration.transform((editor) => {
+			editor.update(INTEGRATION_ID, (integration) => {
+				if (integration.name === (integration.id as unknown as string)) {
+					integration.name = INTEGRATION_NAME;
+				}
+			});
+			editor.method.update({
+				integrationID: INTEGRATION_ID,
+				method: { type: "env", names: ["CMD_API_KEY"] },
+			});
+			editor.method.update({
+				integrationID: INTEGRATION_ID,
+				method: { type: "key", label: "Command Code API key" },
+			});
+		});
 
 		const seed = staticSeedModels();
 		await ctx.provider.transform((editor) => {
@@ -113,9 +178,14 @@ export const commandCodeV2 = Plugin.define({
 					// plain strings.
 					if (provider.name === (provider.id as unknown as string)) provider.name = lane.name;
 					if (provider.package === "") provider.package = lane.pkg;
-					provider.activation = key ? "enabled" : "disabled";
+					// Availability follows the connection when there is one; with only
+					// a local key we mark the provider enabled ourselves.
+					provider.activation = hasConnection || localKey ? "enabled" : "auto";
 					provider.settings = { ...provider.settings, baseURL: PROVIDER_BASE };
-					if (key && provider.settings.apiKey === undefined) provider.settings.apiKey = key;
+					if (!hasConnection && localKey && provider.settings.apiKey === undefined) {
+						provider.settings.apiKey = localKey;
+					}
+					provider.integrationID ??= INTEGRATION_ID as never;
 				});
 				editor.models.set(lane.id, seed[lane.id] as never);
 			}
@@ -143,6 +213,7 @@ export const commandCodeV2 = Plugin.define({
 				},
 				async execute(input) {
 					const arg = typeof (input as { arg?: unknown })?.arg === "string" ? (input as { arg: string }).arg : "";
+					const key = await credentialKey(ctx);
 					return {
 						content: await runCmduse(arg, { env: key ? { CMD_API_KEY: key } : undefined }),
 					};
@@ -150,16 +221,17 @@ export const commandCodeV2 = Plugin.define({
 			});
 		});
 
-		if (!key) return;
-
 		// Live model list in the background: fetch + plan gating + lane split
 		// (same pipeline as v1's provider.models hook), then replace the static
 		// seed. The transform call itself marks the registry changed — no
-		// explicit reload() needed.
+		// explicit reload() needed. Runs whenever any credential source exists —
+		// resolves per attempt so a /connect after load still fills the list.
 		const controller = new AbortController();
 		void (async () => {
+			const key = await credentialKey(ctx);
+			if (!key) return;
 			try {
-				const split = await loadModels(key!);
+				const split = await loadModels(key);
 				if (controller.signal.aborted) return;
 				await ctx.provider.transform((editor) => {
 					editor.models.set(

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { KNOWN_MODELS } from "../src/gating";
 import { isClaude } from "../src/models";
-import { staticSeedModels, toV2Model, type Lane } from "../src/v2";
+import { credentialKey, INTEGRATION_ID, staticSeedModels, toV2Model, type Lane } from "../src/v2";
 
 const claudeLane: Lane = {
 	id: "command-code-anthropic",
@@ -46,6 +46,41 @@ describe("toV2Model", () => {
 	test("capabilities are text-only tools", () => {
 		const m = toV2Model({ id: "x", name: "x", contextLength: 1 }, claudeLane) as Record<string, unknown>;
 		expect(m.capabilities).toEqual({ tools: true, input: ["text"], output: ["text"] });
+	});
+});
+
+describe("credentialKey", () => {
+	const ctxWith = (connection: unknown, credential?: unknown) =>
+		({
+			integration: {
+				connection: {
+					active: async (id: string) => {
+						expect(id).toBe(INTEGRATION_ID);
+						return connection;
+					},
+					resolve: async () => credential,
+				},
+			},
+		}) as never;
+
+	test("stored key wins over the local fallback", async () => {
+		process.env.CMD_API_KEY = "local-key";
+		const key = await credentialKey(ctxWith({ type: "credential", id: "c1" }, { type: "key", key: "host-key" }));
+		expect(key).toBe("host-key");
+		delete process.env.CMD_API_KEY;
+	});
+	test("oauth connections expose the access token", async () => {
+		process.env.CMD_API_KEY = "local-key";
+		const key = await credentialKey(
+			ctxWith({ type: "credential", id: "c1" }, { type: "oauth", access: "tok" }),
+		);
+		expect(key).toBe("tok");
+		delete process.env.CMD_API_KEY;
+	});
+	test("falls back to the local key when no connection exists", async () => {
+		process.env.CMD_API_KEY = "local-key";
+		expect(await credentialKey(ctxWith(undefined))).toBe("local-key");
+		delete process.env.CMD_API_KEY;
 	});
 });
 
