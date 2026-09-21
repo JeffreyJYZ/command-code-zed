@@ -5,18 +5,17 @@
 [![npm](https://img.shields.io/npm/v/@jeffreyjyz/opencode-command-code.svg)](https://www.npmjs.com/package/@jeffreyjyz/opencode-command-code)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
 
-Everything Command Code (commandcode.ai) usage: a terminal dashboard, a Zed
-slash command, and an opencode provider. One Cargo workspace shares the plan
-table and window math via `cmduse-core`; the opencode plugin is a separate TS
-package that registers the providers and delegates usage rendering to the
-`cmduse` CLI.
+Everything Command Code (commandcode.ai) usage: a terminal dashboard with a
+built-in MCP server, and an opencode provider. One Cargo workspace shares the
+plan table and window math via `cmduse-core`; the opencode plugin is a
+separate TS package that registers the providers and delegates usage
+rendering to the `cmduse` CLI.
 
 ## Components
 
 | Component | Crate / dir | Install | Docs |
 |---|---|---|---|
 | `cmduse` CLI | `cli/` (crate `cmd-usage`, bin `cmduse`) | [crates.io](https://crates.io/crates/cmd-usage) · [brew](https://github.com/JeffreyJYZ/homebrew-tap) | **[cli/README.md](cli/README.md)** · [man page](cli/cmduse.1) |
-| Zed extension | `zed-ext/` (crate `command-code-usage`) | dev-install (WASM, no release channel) | [zed-ext/src/lib.rs](zed-ext/src/lib.rs) |
 | Shared core | `core/` (crate `cmduse-core`) | [crates.io](https://crates.io/crates/cmduse-core) | [docs.rs/cmduse-core](https://docs.rs/cmduse-core) |
 | opencode plugin | `opencode/` (`@jeffreyjyz/opencode-command-code`) | [npm](https://www.npmjs.com/package/@jeffreyjyz/opencode-command-code) | [opencode/src/index.ts](opencode/src/index.ts) |
 
@@ -34,10 +33,9 @@ Full usage, config, and statusline docs live in **[cli/README.md](cli/README.md)
 
 ```sh
 cargo build                      # all Rust crates
-cargo test                       # core + cli + zed-ext (host tests)
+cargo test                       # core + cli (host tests)
 cargo fmt --all -- --check       # formatting (CI gate)
 cargo clippy --all-targets -- -D warnings
-cargo build -p command-code-usage --target wasm32-wasip1 --release   # Zed ext
 cargo package -p cmduse-core --allow-dirty   # ships plans.json+gating.json
 cd opencode && bun install && bun test       # conformance vectors too
 bun run extract                              # regen core/gating.json (needs CLI)
@@ -77,12 +75,35 @@ server — prefer `cmd login` or `providers.command-code-*.settings.apiKey` in
 `opencode.jsonc`. Without a key the providers register disabled with a
 warning in the server log.
 
+## MCP server
+
+`cmduse mcp` runs an MCP stdio server (hand-rolled JSON-RPC, no extra deps)
+exposing five tools: `usage` (dashboard), `plans` (comparison table),
+`models` (live gated list), `daily`, and `hourly` — the same output the CLI
+subcommands print, with auth and `~/.commandcode/auth.json` shared.
+
+Zed (`~/.config/zed/settings.json`):
+
+```json
+{
+  "context_servers": {
+    "cmduse": { "source": "custom", "command": "cmduse", "args": ["mcp"] }
+  }
+}
+```
+
+Any other MCP host: run `cmduse mcp` as a stdio server. The opencode plugin
+doesn't need it — it registers its own providers and spawns `cmduse` directly.
+
 ## Why the split
 
 0.1.x duplicated pure logic across two Rust crates (e.g. the burn-rate pace
 gate was patched in two files for one bug). The workspace moves all shared
-math into `core/`; `cli/` and `zed-ext/` keep only their presentation + I/O.
+math into `core/`; `cli/` keeps only its presentation + I/O. The Zed
+extension (deprecated 0.6.9) was replaced by the built-in MCP server — one
+integration serves every MCP-capable host instead of one hand-maintained
+WASM product per editor.
 
 ## License
 
-MIT — see [cli/LICENSE-MIT](cli/LICENSE-MIT), [core/LICENSE-MIT](core/LICENSE-MIT), [zed-ext/LICENSE-MIT](zed-ext/LICENSE-MIT), and [opencode/LICENSE](opencode/LICENSE).
+MIT — see [cli/LICENSE-MIT](cli/LICENSE-MIT), [core/LICENSE-MIT](core/LICENSE-MIT), and [opencode/LICENSE](opencode/LICENSE).

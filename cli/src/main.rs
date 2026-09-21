@@ -1,6 +1,7 @@
 mod api;
 mod cli;
 mod config;
+mod mcp;
 mod paths;
 mod render;
 mod report_render;
@@ -13,6 +14,9 @@ mod cli_tests;
 
 #[cfg(test)]
 mod config_tests;
+
+#[cfg(test)]
+mod mcp_tests;
 
 #[cfg(test)]
 mod render_tests;
@@ -57,93 +61,35 @@ fn main() {
         return;
     }
 
+    if let Some(cli::SubCmd::Mcp) = args.subcmd {
+        mcp::run();
+        return;
+    }
+
     let fmt = output_fmt(&args);
     let colors = !args.plain && render::color_enabled();
     let tz = args.tz.unwrap_or(0);
-    let tz_suffix = |t: i64| cmduse_core::dates::tz_offset_suffix(t);
 
     // offline local reports — no API, no key needed
     match args.subcmd {
         Some(cli::SubCmd::Daily) => {
-            // account-wide (all harnesses) via API when key available; local fallback
-            let data_source = if args.local {
-                None
-            } else {
-                api::api_key()
-                    .ok()
-                    .map(|k| reports::load_account_daily(args.last.unwrap_or(7), &k, tz))
-            };
-            match data_source {
-                Some(Ok(by_day)) => {
-                    let total = reports::sum_days(&by_day);
-                    print!(
-                        "{}",
-                        report_render::table(
-                            "account",
-                            "all harnesses",
-                            &by_day,
-                            &total,
-                            None,
-                            fmt,
-                            colors
-                        )
-                    );
-                }
-                Some(Err(e)) => {
+            match daily_output(args.last, tz, args.local) {
+                Ok(text) => print!("{text}"),
+                Err(e) => {
                     eprintln!("error: {e}");
                     std::process::exit(1);
-                }
-                None => {
-                    let d = reports::load_local(tz);
-                    let subtitle = if tz != 0 {
-                        format!("offline, ~/.commandcode/projects, UTC{}", tz_suffix(tz))
-                    } else {
-                        "offline, ~/.commandcode/projects".to_string()
-                    };
-                    print!(
-                        "{}",
-                        report_render::table(
-                            "local", &subtitle, &d.by_day, &d.total, args.last, fmt, colors
-                        )
-                    );
                 }
             }
             return;
         }
         Some(cli::SubCmd::Hours) => {
-            let rows = if args.local {
-                reports::load_local_hourly(args.hours.unwrap_or(24), tz)
-            } else {
-                let key = match api::api_key() {
-                    Ok(k) => k,
-                    Err(e) => {
-                        eprintln!("error: {e}");
-                        std::process::exit(1);
-                    }
-                };
-                match reports::load_account_hourly(args.hours.unwrap_or(24), &key, tz) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        eprintln!("error: {e}");
-                        std::process::exit(1);
-                    }
+            match hourly_output(args.hours, tz, args.local) {
+                Ok(text) => print!("{text}"),
+                Err(e) => {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
                 }
-            };
-            let subtitle = if args.local {
-                if tz != 0 {
-                    format!("local, CLI sessions, UTC{}", tz_suffix(tz))
-                } else {
-                    "local, CLI sessions".to_string()
-                }
-            } else if args.tz.is_some() {
-                format!("all harnesses, UTC{}", tz_suffix(tz))
-            } else {
-                "all harnesses, UTC".to_string()
-            };
-            print!(
-                "{}",
-                report_render::hourly_table(&rows, fmt, &subtitle, colors)
-            );
+            }
             return;
         }
         Some(cli::SubCmd::Model) => {
@@ -171,6 +117,8 @@ fn main() {
             plans_cmd(&args);
             return;
         }
+        // handled (and served) before this match; unreachable
+        Some(cli::SubCmd::Mcp) => {}
         None => {}
     }
 
@@ -612,6 +560,133 @@ fn plans_cmd(args: &cli::Args) {
     } else {
         print!("{}", render::plans_table(&current, render::color_enabled()));
     }
+}
+
+// --- shared tool/report bodies (CLI subcommands AND `cmduse mcp` tools) ---
+// One implementation each; the MCP layer is a thin adapter over these.
+
+/// One-shot dashboard, plain text (no SGR) — the MCP `usage` tool body.
+pub(crate) fn usage_output() -> String {
+    render::render_plain(&snapshot::snapshot())
+}
+
+/// Plan comparison table. `colors` off for MCP, `render::color_enabled()` for
+/// the CLI. Current-plan mark is best-effort (no key/network → no mark).
+pub(crate) fn plans_output(colors: bool) -> String {
+    let current = api::api_key()
+        .ok()
+        .and_then(|k| api::subscriptions(&k).ok())
+        .map(|s| s.plan_id)
+        .unwrap_or_default();
+    render::plans_table(&current, colors)
+}
+
+/// Gated live model list as aligned text. `Err` = API/network failure.
+pub(crate) fn models_output(gated: bool) -> Result<String, String> {
+    let key = api::api_key().map_err(|e| e.to_string())?;
+    let (plan_id, unlocked) = if gated {
+        match (api::subscriptions(&key), api::credits(&key)) {
+            (Ok(s), Ok(c)) => (
+                s.plan_id,
+                c.credits.purchased_credits > 0.0 || c.credits.free_credits > 0.0,
+            ),
+            _ => (String::new(), true), // unknown → show everything
+        }
+    } else {
+        (String::new(), true)
+    };
+    let list = api::models(&key).map_err(|e| e.to_string())?;
+    let list: Vec<_> = if gated {
+        list.into_iter()
+            .filter(|m| cmduse_core::gate_allowed(&m.id, &plan_id, unlocked))
+            .collect()
+    } else {
+        list
+    };
+    if list.is_empty() {
+        return Ok("no models returned\n".into());
+    }
+    let mut rows: Vec<_> = list
+        .iter()
+        .map(|m| {
+            let ctx = m
+                .context_length
+                .map(|n| format!("{} ctx", render::compact(n)))
+                .unwrap_or_else(|| "-".into());
+            let name = m.name.as_deref().unwrap_or(&m.id);
+            (m.id.as_str(), name, ctx)
+        })
+        .collect();
+    rows.sort_by(|a, b| a.1.cmp(b.1));
+    let mut out = String::new();
+    for (id, name, ctx) in rows {
+        out.push_str(&format!("{name:<36} {ctx:<10} {id}\n"));
+    }
+    Ok(out)
+}
+
+/// Account-wide daily report; local CLI-log fallback when no key/--local.
+pub(crate) fn daily_output(days: Option<usize>, tz: i64, local: bool) -> Result<String, String> {
+    let fmt = report_render::Fmt::Table;
+    let tz_suffix = |t: i64| cmduse_core::dates::tz_offset_suffix(t);
+    // account-wide (all harnesses) via API when key available; local fallback
+    let data_source = if local {
+        None
+    } else {
+        api::api_key()
+            .ok()
+            .map(|k| reports::load_account_daily(days.unwrap_or(7), &k, tz))
+    };
+    match data_source {
+        Some(Ok(by_day)) => {
+            let total = reports::sum_days(&by_day);
+            Ok(report_render::table(
+                "account",
+                "all harnesses",
+                &by_day,
+                &total,
+                None,
+                fmt,
+                false,
+            ))
+        }
+        Some(Err(e)) => Err(e.to_string()),
+        None => {
+            let d = reports::load_local(tz);
+            let subtitle = if tz != 0 {
+                format!("offline, ~/.commandcode/projects, UTC{}", tz_suffix(tz))
+            } else {
+                "offline, ~/.commandcode/projects".to_string()
+            };
+            Ok(report_render::table(
+                "local", &subtitle, &d.by_day, &d.total, days, fmt, false,
+            ))
+        }
+    }
+}
+
+/// Hourly report; local CLI sessions with --local, else all harnesses.
+pub(crate) fn hourly_output(hours: Option<usize>, tz: i64, local: bool) -> Result<String, String> {
+    let fmt = report_render::Fmt::Table;
+    let tz_suffix = |t: i64| cmduse_core::dates::tz_offset_suffix(t);
+    let rows = if local {
+        reports::load_local_hourly(hours.unwrap_or(24), tz)
+    } else {
+        let key = api::api_key().map_err(|e| e.to_string())?;
+        reports::load_account_hourly(hours.unwrap_or(24), &key, tz).map_err(|e| e.to_string())?
+    };
+    let subtitle = if local {
+        if tz != 0 {
+            format!("local, CLI sessions, UTC{}", tz_suffix(tz))
+        } else {
+            "local, CLI sessions".to_string()
+        }
+    } else if tz != 0 {
+        format!("all harnesses, UTC{}", tz_suffix(tz))
+    } else {
+        "all harnesses, UTC".to_string()
+    };
+    Ok(report_render::hourly_table(&rows, fmt, &subtitle, false))
 }
 
 /// Report output format. `--json`/`--csv` are mutually exclusive (parse-guarded).

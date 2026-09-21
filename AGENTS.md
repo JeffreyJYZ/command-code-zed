@@ -1,13 +1,13 @@
 # AGENTS.md
 
-Workspace: cmduse-core + cmd-usage CLI + Zed extension + opencode plugin,
-single source of shared logic. Release line 0.6.8 (0.2–0.4 slots are
+Workspace: cmduse-core + cmd-usage CLI (+ built-in MCP server) + opencode
+plugin, single source of shared logic. Release line 0.6.8 (0.2–0.4 slots are
 yanked-forever on crates.io from the old crate).
 
 ## Layout
 
 ```
-Cargo.toml         workspace (members: core, cli, zed-ext)
+Cargo.toml         workspace (members: core, cli)
 core/              cmduse-core: shared pure logic, single source of truth
   plans.json       canonical plan table + name rules + monthly caps (see below)
   gating.json      canonical model categories + per-plan gating + hard-blocked
@@ -22,11 +22,11 @@ core/              cmduse-core: shared pure logic, single source of truth
                    opencode/src/{access,gating}.ts)
   src/dates.rs     ISO/UTC date helpers (parse_iso_utc, parse_tz_parts,
                    civil_from_days, iso_instant, now_secs, …)
-  src/wire.rs      API wire DTOs shared by CLI + Zed (Credits/Window/SubData/…)
+  src/wire.rs      API wire DTOs shared by the CLI's clients (Credits/Window/SubData/…)
 cli/               cmd-usage (bin `cmduse`), published to crates.io
   src/…            thin UI: api client, snapshot, ANSI rendering, reports, redraw
-zed-ext/           command-code-usage Zed extension (WASM, markdown output)
-  src/lib.rs       thin UI: HTTP via zed API, markdown window/plans render
+  src/mcp.rs       `cmduse mcp` MCP stdio server (hand-rolled JSON-RPC; tools
+                   reuse the same output helpers as the CLI subcommands)
 opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
                    v1 (server()) + v2 (setup()) entrypoints; no core crate;
                    imports ../../core/{gating,conformance}.json; usage
@@ -36,10 +36,9 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
 ## Core rules
 
 - **Shared logic lives in `core/` ONLY.** A bug in plan table / window math /
-  pace gate / dates gets ONE fix. Both `cli/` and `zed-ext/` depend on
-  `cmduse-core` by path. UI-specific stuff stays local: ANSI constants +
-  colored bars in cli, markdown formatting in zed-ext, bar glyphs differ per
-  UI — do NOT move presentation into core.
+  pace gate / dates gets ONE fix. `cli/` depends on `cmduse-core` by path.
+  UI-specific stuff stays local: ANSI constants + colored bars in cli — do
+  NOT move presentation into core.
 - **Plan data lives in `core/plans.json`, gating data in `core/gating.json`,
   never in code.** `core/build.rs` bakes both into Rust consts; `opencode`
   imports the same files. Edit the JSON, not the generated consts or the TS.
@@ -57,7 +56,7 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
   implementation (Rust core) because the opencode plugin spawns the cmduse
   CLI for all usage rendering instead of porting that logic.
 - `core` keeps adapters out: cli wraps `rel_time`/`elapsed_pct` to its
-  `u64`-now signatures; zed-ext uses core's `Option<u64>` forms directly.
+  `u64`-now signatures.
 - Window caps (5-hour/weekly) come from the API `Window.cap` response, NOT
   derived. `plan_monthly_cap` is the only static table (monthly pool); window
   lengths are `core::FIVE_HOUR_SECS` / `core::WEEKLY_SECS`.
@@ -73,11 +72,11 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
 ## Build & test
 
 ```sh
-cargo test            # whole workspace (core + cli + zed-ext host tests)
+cargo test            # whole workspace (core + cli host tests)
 cargo fmt --all -- --check
 cargo clippy --all-targets -- -D warnings
-cargo build -p command-code-usage --target wasm32-wasip1 --release
 cargo package -p cmduse-core --allow-dirty   # core ships plans.json+gating.json
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | cargo run -p cmd-usage -- mcp   # MCP smoke
 cd opencode && bun test && bun run typecheck
 ```
 
@@ -90,8 +89,7 @@ cd opencode && bun test && bun run typecheck
   on old `cmd-usage` — you can never re-upload those numbers. Current 0.x
   release line is 0.6.8 (first free slot past the dead 0.2–0.4 range). Skip
   taken numbers, never fight the 400.
-- Clean tree required (commit first, incl. Cargo.lock). Zed ext has NO
-  release channel (local dev-install only).
+- Clean tree required (commit first, incl. Cargo.lock).
 - Homebrew after every cmd-usage release: `JeffreyJYZ/homebrew-tap`,
   `Formula/cmduse.rb` — bump version, url, sha256
   (`curl -sL https://static.crates.io/crates/cmd-usage/cmd-usage-<v>.crate | shasum -a 256`).
@@ -112,9 +110,11 @@ cd opencode && bun test && bun run typecheck
 API endpoints, cumulative-diff reports, TLS retry, watch-mode redraw rules
 (frame's last line has NO trailing newline; frame-shrink = `\x1b[1B` +
 `\x1b[2K\x1b[1B` + `\x1b[2K` + `\x1b[{prev-n}F`; test redraw bytes via
-cli/src/main_tests.rs). Zed wasm: crate builds for `wasm32-wasip1`;
-`extension.wasm` regenerated on dev-install.
-`--tz` offsets are **east-positive seconds** (`parse_tz("+05:30")=+19800`),
+cli/src/main_tests.rs). MCP: hand-rolled stdio JSON-RPC (newline-delimited);
+notifications (no `id`) get NO response; tool errors are `isError: true`
+results, never JSON-RPC errors; stdout is protocol-only — anything printed by
+a tool body would corrupt the stream, so tool text goes through the result
+envelope. `--tz` offsets are **east-positive seconds** (`parse_tz("+05:30")=+19800`),
 matching `tz_offset_suffix`; local = UTC + tz. All day/hour bucketing must use
 that sign — a flipped `now - tz` silently shifts every local bucket (fixed in
 0.6.2). `--tz` reaches the `--local` log path too (daily + hourly), not just
@@ -123,7 +123,8 @@ the account API. Report output goes through `render::color_enabled()`
 floor to a UTC hour, that breaks minute-bearing offsets like +05:30.
 `pace_eta` returns **seconds** (a duration); format it with `core::duration`,
 never `rel_time` — the latter expects an absolute reset epoch and renders any
-small duration as "resetting…" (bug shipped in cli + zed until 0.6.2, and again
+small duration as "resetting…" (bug shipped in cli + zed until 0.6.2 — zed
+since deleted — and again
 in the CLI statusline's `{5h_eta}`/`{wk_eta}` until 0.6.7). Any ETA text goes
 through `duration`.
 

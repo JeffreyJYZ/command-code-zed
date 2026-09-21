@@ -29,6 +29,8 @@ cmduse \- live Command Code (commandcode.ai) usage dashboard and reporter
 .B cmduse statusline
 [\fB\-\-json\fR]
 .br
+.B cmduse mcp
+.br
 .B cmduse config set
 \fIkey\fR=\fIvalue\fR [\fIkey\fR=\fIvalue\fR ...]
 .br
@@ -127,6 +129,14 @@ to stdout and exits 1.  \fB\-\-json\fR prints one JSON object:
 plan, monthlyRemaining, monthlyCap, fiveHourUsed, fiveHourCap, weeklyUsed,
 weeklyCap (all dollars as JSON numbers; plan is the human name such as
 "GOAT").
+.TP
+.B mcp
+Run an MCP (Model Context Protocol) stdio server: newline\-delimited
+JSON\-RPC on stdin/stdout, diagnostics on stderr.  Exposes five tools \(
+usage, plans, models, daily, hourly \) whose output is the same text the
+corresponding subcommands print.  Tool execution errors are returned as
+results with isError true, not JSON\-RPC errors.  Intended for MCP hosts
+such as Zed's context_servers ("command": "cmduse", "args": ["mcp"]).
 .TP
 .B config set \fIkey\fR=\fIvalue\fR ...
 Merge the given settings into

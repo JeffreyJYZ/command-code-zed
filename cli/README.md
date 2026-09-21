@@ -53,6 +53,7 @@ cmduse models --gated        # ...only models the current plan allows
 cmduse models --gated --json # every model annotated with allowed + reason
 cmduse plans                 # plan comparison table (marks your plan)
 cmduse statusline            # compact one-liner for prompts/tmux
+cmduse mcp                   # MCP stdio server (usage/plans/models/daily/hourly tools)
 cmduse daily --json          # JSON output (daily, hourly, model, session, models, statusline, plans, -1)
 cmduse daily --csv           # CSV output for daily/hourly/model/session
 ```
@@ -60,6 +61,32 @@ cmduse daily --csv           # CSV output for daily/hourly/model/session
 Color: SGR escapes are suppressed when stdout is not a terminal or when
 `NO_COLOR` is set non-empty. `--plain` forces plain text; reports have no
 `--plain` — pipe them or use `--json`/`--csv`.
+
+## MCP server
+
+`cmduse mcp` runs an MCP stdio server (newline-delimited JSON-RPC, hand-rolled
+— no extra dependencies) so any MCP-capable host (Zed, and others) can call
+Command Code usage as tools:
+
+| Tool | Body |
+|---|---|
+| `usage` | one-shot dashboard (same as `cmduse -1`) |
+| `plans` | plan comparison table (same as `cmduse plans`) |
+| `models` | live model list, filtered to the current plan (same as `cmduse models --gated`) |
+| `daily` | account daily report; args `days`, `tz` (±HH:MM), `local` |
+| `hourly` | account hourly report; args `hours`, `tz`, `local` |
+
+Auth is the same as the CLI (`CMD_API_KEY`, then `~/.commandcode/auth.json`).
+Tool errors come back as `isError: true` results; stdout carries protocol
+traffic only. Zed config:
+
+```json
+{
+  "context_servers": {
+    "cmduse": { "source": "custom", "command": "cmduse", "args": ["mcp"] }
+  }
+}
+```
 
 `-1 --json` emits a single dashboard object (plan, credits, both windows,
 billing summary). `--gated --json` on `models` emits every model with

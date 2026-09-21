@@ -43,6 +43,7 @@ pub enum SubCmd {
     Statusline,
     Models,
     Plans,
+    Mcp,
 }
 
 pub fn parse_args() -> Args {
@@ -156,6 +157,7 @@ pub(crate) fn parse_args_from(
                 "session" | "sessions" | "project" => a.subcmd = Some(SubCmd::Session),
                 "models" => a.subcmd = Some(SubCmd::Models),
                 "plans" => a.subcmd = Some(SubCmd::Plans),
+                "mcp" => a.subcmd = Some(SubCmd::Mcp),
                 "statusline" => a.subcmd = Some(SubCmd::Statusline),
                 "config" => a.config_set = Some(parse_config_set(&mut parser)?),
                 other => return Err(format!("unknown arg: {other} (try --help)")),
@@ -294,6 +296,7 @@ Usage: cmduse [options]           Live plan dashboard (watch mode)
        cmduse models              Live model list from the Command Code API
        cmduse plans               Plan comparison table
        cmduse statusline          Compact one-liner for prompts/tmux
+       cmduse mcp                 MCP stdio server (usage/plans/models/daily/hourly tools)
        cmduse config set interval=<s> width=<n> burst_on=true burst=40
 
 Options:

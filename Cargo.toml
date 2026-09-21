@@ -1,5 +1,5 @@
 [workspace]
-members = ["core", "cli", "zed-ext"]
+members = ["core", "cli"]
 resolver = "2"
 
 [profile.release]

@@ -18,15 +18,6 @@ jobs:
       - run: cargo run -p cmd-usage -- -V          # binary smoke-test
       - run: cargo package -p cmduse-core --allow-dirty  # crate packages + verifies
 
-  zed-ext-wasm:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-wasip1
-      - run: cargo build -p command-code-usage --target wasm32-wasip1 --release
-
   opencode-plugin:
     runs-on: ubuntu-latest
     defaults:
