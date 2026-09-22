@@ -61,20 +61,19 @@ core — the plugin spawns it):
 brew install JeffreyJYZ/tap/cmduse
 ```
 
-Install:
+Install (opencode v2 uses `plugins`; v1's singular `plugin` is auto-normalized):
 
-```jsonc
-// opencode v2: "plugins"; v1: "plugin" (auto-normalized)
+```json
 {
   "plugins": ["@jeffreyjyz/opencode-command-code"]
 }
 ```
 
-Auth resolves `CMD_API_KEY`, then `~/.commandcode/auth.json` (`cmd login`).
-Under opencode v2's background service, shell env vars often don't reach the
-server — prefer `cmd login` or `providers.command-code-*.settings.apiKey` in
-`opencode.jsonc`. Without a key the providers register disabled with a
-warning in the server log.
+Auth, in host order: opencode's own connection — **`/connect` and pick
+"Command Code"** (or the `CMD_API_KEY` env method) — then our fallback
+`~/.commandcode/auth.json` from `cmd login`. With no credential at all the
+providers stay `activation: "auto"`, so a later `/connect` lights them up
+without a restart.
 
 ## MCP server
 
