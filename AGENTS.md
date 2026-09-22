@@ -90,6 +90,14 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | cargo run -p cm
 cd opencode && bun test && bun run typecheck
 ```
 
+Tests must be hermetic: CI (Ubuntu) has no `cmduse` binary and no homebrew
+prefix, so anything that shells out to the real CLI needs a skip guard
+(`test.skipIf`) or an injected candidate list — a passing local run proves
+nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
+`cargo test --all-targets`, `cargo clippy --all-targets -- -D warnings`,
+`cargo package -p cmduse-core --allow-dirty`, then the opencode job's
+`bun install && bun test && bun run typecheck && bun run build`.
+
 ## Publishing (NEVER without explicit user go)
 
 - Order matters: `cmduse-core` first, then `cmd-usage`. `cli/Cargo.toml` dep

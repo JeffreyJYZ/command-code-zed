@@ -38,7 +38,19 @@ describe("buildCmduseArgs", () => {
 });
 
 describe("runCmduse", () => {
-	test("real binary on PATH (smoke)", async () => {
+	// CI has no cmduse binary: the smoke test must not assume a host install.
+	// Skip it there, run it on a machine with the CLI present.
+	const hasCmduse = (() => {
+		try {
+			const { execFileSync } = require("node:child_process") as typeof import("node:child_process");
+			execFileSync("cmduse", ["-V"], { stdio: "ignore" });
+			return true;
+		} catch {
+			return false;
+		}
+	})();
+
+	test.skipIf(!hasCmduse)("real binary on PATH (smoke)", async () => {
 		const out = await runCmduse("--version");
 		expect(out.trim()).toMatch(/\d+\.\d+\.\d+/);
 	});
