@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "cmduse-core"
-version = "0.6.8"
+version = "1.0.0"
 dependencies = [
  "serde",
  "serde_json",

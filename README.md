@@ -16,7 +16,7 @@ rendering to the `cmduse` CLI.
 | Component | Crate / dir | Install | Docs |
 |---|---|---|---|
 | `cmduse` CLI | `cli/` (crate `cmd-usage`, bin `cmduse`) | [crates.io](https://crates.io/crates/cmd-usage) · [brew](https://github.com/JeffreyJYZ/homebrew-tap) | **[cli/README.md](cli/README.md)** · [man page](cli/cmduse.1) |
-| Shared core | `core/` (crate `cmduse-core`) | [crates.io](https://crates.io/crates/cmduse-core) | [docs.rs/cmduse-core](https://docs.rs/cmduse-core) |
+| Shared core | `core/` (crate `cmduse-core`) | [crates.io](https://crates.io/crates/cmduse-core) | [docs.rs/cmduse-core](https://docs.rs/cmduse-core) · versioned on its own `1.x` line, not as a pair with the CLI |
 | opencode plugin | `opencode/` (`@jeffreyjyz/opencode-command-code`) | [npm](https://www.npmjs.com/package/@jeffreyjyz/opencode-command-code) | [opencode/src/index.ts](opencode/src/index.ts) |
 
 ## Install the CLI

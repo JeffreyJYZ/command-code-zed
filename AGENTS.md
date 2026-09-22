@@ -1,8 +1,9 @@
 # AGENTS.md
 
 Workspace: cmduse-core + cmd-usage CLI (+ built-in MCP server) + opencode
-plugin, single source of shared logic. Release line 0.6.8 (0.2–0.4 slots are
-yanked-forever on crates.io from the old crate).
+plugin, single source of shared logic. Two independent version lines:
+cmd-usage 0.6.x and cmduse-core 1.x (0.2–0.4 slots are yanked-forever on
+crates.io from the old cmd-usage crate).
 
 ## Layout
 
@@ -100,15 +101,19 @@ nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
 
 ## Publishing (NEVER without explicit user go)
 
-- Order matters: `cmduse-core` first, then `cmd-usage`. `cli/Cargo.toml` dep
-  is `{ path = "../core", version = "0.6.8" }` — path resolves locally, the
-  `version` must already exist on crates.io for `cmd-usage` publish to work.
-  Bump core whenever the CLI starts using a new core API: `cargo package -p
-  cmd-usage` verifies against the *published* core, so a stale dep version
-  fails the tarball build with compile errors you won't see locally.
+- **Versions are independent: `cmduse-core` is on its own `1.x` line; the CLI
+  is 0.6.x.** They are NOT a pair — do not try to read one from the other, and
+  never "sync" them. Core bumps only when its own API changes (breaking → major,
+  additive → minor, fix → patch); the CLI bumps per release as usual.
+  `cli/Cargo.toml` depends on `{ path = "../core", version = "1" }`, so a new
+  core minor/patch needs no CLI edit.
+- Publish order when core changed: `cmduse-core` first, then `cmd-usage` —
+  `cargo package -p cmd-usage` verifies against the *published* core, so a
+  core API the registry doesn't have yet fails the tarball build with compile
+  errors you won't see locally. If core did not change, publish the CLI alone.
 - **crates.io version slots are FOREVER.** 0.2.0–0.4.0 were published+yanked
   on old `cmd-usage` — you can never re-upload those numbers. Current 0.x
-  release line is 0.6.8 (first free slot past the dead 0.2–0.4 range). Skip
+  release line is 0.6.11 (first free slot past the dead 0.2–0.4 range). Skip
   taken numbers, never fight the 400.
 - Clean tree required (commit first, incl. Cargo.lock).
 - Homebrew after every cmd-usage release: `JeffreyJYZ/homebrew-tap`,
