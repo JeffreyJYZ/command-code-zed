@@ -72,7 +72,7 @@ pub struct SubData {
     pub current_period_start: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageSummary {
     // Option so a partial/unavailable summary renders as "—" rather than a

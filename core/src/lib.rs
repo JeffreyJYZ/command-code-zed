@@ -1,4 +1,5 @@
 pub mod dates;
+pub mod reports;
 pub mod wire;
 pub use dates::parse_iso_utc;
 pub use wire::{

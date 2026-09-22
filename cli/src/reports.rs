@@ -1,9 +1,18 @@
+// I/O half of the reports: session-JSONL walk, the account API pool, and
+// nothing else. Bucketing, cumulative-difference math, and the tz helpers live
+// in `cmduse_core::reports` (single source, pure, unit-tested there).
 use crate::api;
-use cmduse_core::dates::{
-    civil_from_days, day_shift, hour_label, iso_instant, now_secs, parse_iso_utc,
+use cmduse_core::dates::{hour_label, now_secs, parse_iso_utc};
+use cmduse_core::reports::{
+    bucket_records, daily_from_cumulative, hour_bounds, hourly_from_cumulative, iso_day_start,
+    local_hour_start, recent_days, today_in_tz, UsageRecord,
 };
 use serde::Deserialize;
-use std::collections::BTreeMap;
+
+// Re-exported so existing `crate::reports::…` paths (main, report_render) keep
+// working unchanged.
+pub use cmduse_core::reports::{sum_days, ByDay, ByModel, ByProject, LocalData, Totals, Usage};
+
 #[derive(Deserialize)]
 struct Line {
     #[serde(rename = "type")]
@@ -22,68 +31,6 @@ struct Line {
 struct Message {
     #[serde(default)]
     role: Option<String>,
-}
-
-#[derive(Deserialize, Clone, Copy, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct Usage {
-    #[serde(default)]
-    pub input_tokens: u64,
-    #[serde(default)]
-    pub output_tokens: u64,
-    #[serde(default)]
-    pub cache_read_tokens: u64,
-    #[serde(default)]
-    pub cache_write_tokens: u64,
-    #[serde(default, rename = "costUsd")]
-    pub cost_usd: f64,
-}
-
-#[derive(Default, Clone, Copy)]
-pub struct Totals {
-    pub requests: u64,
-    pub usage: Usage,
-}
-
-impl Totals {
-    fn add(&mut self, u: &Usage) {
-        self.merge(&Totals {
-            requests: 1,
-            usage: *u,
-        });
-    }
-
-    fn merge(&mut self, o: &Totals) {
-        self.requests += o.requests;
-        self.usage.input_tokens += o.usage.input_tokens;
-        self.usage.output_tokens += o.usage.output_tokens;
-        self.usage.cache_read_tokens += o.usage.cache_read_tokens;
-        self.usage.cache_write_tokens += o.usage.cache_write_tokens;
-        self.usage.cost_usd += o.usage.cost_usd;
-    }
-}
-
-/// day → totals (UTC date from message timestamp)
-pub type ByDay = BTreeMap<String, Totals>;
-/// model → totals
-pub type ByModel = BTreeMap<String, Totals>;
-/// project (dir name) → totals
-pub type ByProject = BTreeMap<String, Totals>;
-
-pub struct LocalData {
-    pub by_day: ByDay,
-    pub by_model: ByModel,
-    pub by_project: ByProject,
-    pub total: Totals,
-}
-
-/// Day key (YYYY-MM-DD) for an ISO timestamp in `tz` seconds east of UTC.
-/// Falls back to the raw UTC date slice when the timestamp doesn't parse.
-fn day_of(ts: &str, tz: i64) -> Option<String> {
-    match parse_iso_utc(ts) {
-        Some(ms) => Some(date_in_tz((ms / 1000.0) as i64, tz)),
-        None => ts.get(0..10).map(|s| s.to_string()),
-    }
 }
 
 /// (project dir name, file contents) for every session JSONL under
@@ -112,12 +59,10 @@ fn session_files() -> Vec<(String, String)> {
     out
 }
 
-/// Walk every session JSONL and call `f` for each assistant message carrying
-/// usage: (project, timestamp, model, usage, saw_session_marker). The walk /
-/// parse / user-role filter lives here so the daily and hourly scans can't
-/// drift apart.
-fn for_each_usage_line(mut f: impl FnMut(&str, &str, Option<&str>, &Usage, bool)) {
-    for (proj_name, text) in session_files() {
+/// Parse every session JSONL into owned usage records.
+fn usage_records(files: &[(String, String)]) -> Vec<UsageRecord> {
+    let mut out = Vec::new();
+    for (proj_name, text) in files {
         let mut is_session_file = false;
         for line in text.lines() {
             let Ok(l) = serde_json::from_str::<Line>(line) else {
@@ -131,41 +76,24 @@ fn for_each_usage_line(mut f: impl FnMut(&str, &str, Option<&str>, &Usage, bool)
                     if l.message.as_ref().and_then(|m| m.role.as_deref()) == Some("user") {
                         continue;
                     }
-                    f(
-                        &proj_name,
-                        &l.timestamp,
-                        l.model.as_deref(),
-                        &u,
-                        is_session_file,
-                    );
+                    out.push(UsageRecord {
+                        project: proj_name.clone(),
+                        timestamp: l.timestamp,
+                        model: l.model,
+                        usage: u,
+                        is_session: is_session_file,
+                    });
                 }
                 _ => {}
             }
         }
     }
+    out
 }
 
 pub fn load_local(tz: i64) -> LocalData {
-    let mut data = LocalData {
-        by_day: ByDay::new(),
-        by_model: ByModel::new(),
-        by_project: ByProject::new(),
-        total: Totals::default(),
-    };
-
-    for_each_usage_line(|proj, ts, model, u, is_session_file| {
-        if let Some(day) = day_of(ts, tz) {
-            data.by_day.entry(day).or_default().add(u);
-        }
-        if let Some(m) = model {
-            data.by_model.entry(m.to_string()).or_default().add(u);
-        }
-        if is_session_file {
-            data.by_project.entry(proj.to_string()).or_default().add(u);
-        }
-        data.total.add(u);
-    });
-    data
+    let files = session_files();
+    bucket_records(&usage_records(&files), tz)
 }
 
 // ---- Account-wide daily usage (API, all harnesses) ----
@@ -173,27 +101,7 @@ pub fn load_local(tz: i64) -> LocalData {
 // Provider API). Only the server knows the full picture; local JSONL misses
 // non-CLI usage. alpha/usage/summary?since=<ISO> returns cumulative totals
 // from that instant to now. Per-day usage = cum(day start) - cum(next day
-// start).
-
-/// UTC instant for local midnight of civil `day` in `tz` seconds east of UTC.
-/// Emitted as a `Z` instant, never an offset suffix: the value goes into a
-/// `?since=` query and `+` would decode as a space server-side.
-fn iso_day_start(day: &str, tz: i64) -> String {
-    match parse_iso_utc(&format!("{day}T00:00:00.000Z")) {
-        Some(ms) => iso_instant(((ms / 1000.0) as i64 - tz).max(0) as u64),
-        None => format!("{day}T00:00:00.000Z"),
-    }
-}
-
-/// Civil "today" in the given fixed offset.
-fn today_in_tz(tz: i64) -> String {
-    date_in_tz(now_secs() as i64, tz)
-}
-
-/// Date at epoch `now` in `tz` seconds east of UTC (local = UTC + tz).
-fn date_in_tz(now: i64, tz: i64) -> String {
-    civil_from_days((now + tz).div_euclid(86400))
-}
+// start) — see core::reports::daily_from_cumulative.
 
 /// Fetch cumulative summaries for many `since` boundaries with bounded
 /// concurrency; result order matches input order.
@@ -236,85 +144,10 @@ fn fetch_pool(sinces: &[String], key: &str) -> Result<Vec<api::UsageSummary>, St
 /// fetched from the usage API (8-way concurrent). Includes usage from
 /// every harness that used the account key.
 pub fn load_account_daily(days: usize, key: &str, tz: i64) -> Result<ByDay, String> {
-    let today = today_in_tz(tz);
-    let days = days.max(1);
-    let days_list: Vec<String> = (0..days)
-        .filter_map(|i| day_shift(&today, -(i as i64)))
-        .collect();
-    let sinces: Vec<String> = days_list.iter().map(|d| iso_day_start(d, tz)).collect();
+    let labels = recent_days(&today_in_tz(tz), days);
+    let sinces: Vec<String> = labels.iter().map(|d| iso_day_start(d, tz)).collect();
     let cums = fetch_pool(&sinces, key)?;
-    // zip back with day labels, sort oldest → newest
-    let mut by_day: Vec<(String, api::UsageSummary)> = days_list.into_iter().zip(cums).collect();
-    by_day.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let mut out = ByDay::new();
-    for (i, (day, cum)) in by_day.iter().enumerate() {
-        // per-day = cum(day start) - cum(next day start); for today subtract 0
-        let (reqs, cost, tin, tout) = if i + 1 < by_day.len() {
-            let next = &by_day[i + 1].1;
-            (
-                cum.total_count
-                    .unwrap_or(0)
-                    .saturating_sub(next.total_count.unwrap_or(0)),
-                (cum.total_cost.unwrap_or(0.0) - next.total_cost.unwrap_or(0.0)).max(0.0),
-                cum.total_tokens_in
-                    .unwrap_or(0)
-                    .saturating_sub(next.total_tokens_in.unwrap_or(0)),
-                cum.total_tokens_out
-                    .unwrap_or(0)
-                    .saturating_sub(next.total_tokens_out.unwrap_or(0)),
-            )
-        } else {
-            (
-                cum.total_count.unwrap_or(0),
-                cum.total_cost.unwrap_or(0.0),
-                cum.total_tokens_in.unwrap_or(0),
-                cum.total_tokens_out.unwrap_or(0),
-            )
-        };
-        if reqs == 0 && cost == 0.0 {
-            continue;
-        }
-        out.insert(
-            day.clone(),
-            Totals {
-                requests: reqs,
-                usage: Usage {
-                    input_tokens: tin,
-                    output_tokens: tout,
-                    cost_usd: cost,
-                    ..Default::default()
-                },
-            },
-        );
-    }
-    Ok(out)
-}
-
-pub fn sum_days(by_day: &ByDay) -> Totals {
-    let mut t = Totals::default();
-    for v in by_day.values() {
-        t.merge(v);
-    }
-    t
-}
-
-// ---- Hourly buckets (account-wide) ----
-// Same cumulative-diff trick with hour boundaries: per-hour usage =
-// cum(hour start) - cum(next hour start). Today's in-progress hour =
-// cum(hour start) itself.
-
-/// Bucket boundaries for the last `hours` whole hours: local bucket starts
-/// (for labels) and matching UTC `since` instants (for the API). local = UTC + tz.
-fn hour_bounds(now: u64, hours: usize, tz: i64) -> (Vec<u64>, Vec<u64>) {
-    let local_now = (now as i64 + tz) as u64;
-    let current_hour_local = local_now - local_now % 3600;
-    let local: Vec<u64> = (0..hours)
-        .rev()
-        .map(|i| current_hour_local - (i as u64) * 3600)
-        .collect();
-    let utc: Vec<u64> = local.iter().map(|&b| (b as i64 - tz) as u64).collect();
-    (local, utc)
+    Ok(daily_from_cumulative(&labels, &cums))
 }
 
 /// Account-wide usage for the last `hours` hours, one row per hour bucket
@@ -324,149 +157,40 @@ pub fn load_account_hourly(
     key: &str,
     tz: i64,
 ) -> Result<Vec<(String, Totals)>, String> {
-    let hours = hours.max(1);
-    let (bounds_local, bounds_utc) = hour_bounds(now_secs(), hours, tz);
-
-    // bounded 8-way pool (shared fetch_pool); cums[i] aligns with bounds[i]
-    let sinces: Vec<String> = bounds_utc.iter().map(|&b| iso_instant(b)).collect();
+    let (bounds_local, bounds_utc) = hour_bounds(now_secs(), hours.max(1), tz);
+    let sinces: Vec<String> = bounds_utc
+        .iter()
+        .map(|&b| cmduse_core::dates::iso_instant(b))
+        .collect();
     let cums = fetch_pool(&sinces, key)?;
-
-    // cum[i] = usage from bounds[i] → now. per-hour i = cum[i] - cum[i+1];
-    // current (last) bucket = cum[last] (nothing after it to subtract — it
-    // covers only up to now, which is what we want).
-    let mut out = Vec::new();
-    for (i, b) in bounds_local.iter().enumerate() {
-        let (reqs, cost, tin, tout) = if i + 1 < cums.len() {
-            let next = &cums[i + 1];
-            (
-                cums[i]
-                    .total_count
-                    .unwrap_or(0)
-                    .saturating_sub(next.total_count.unwrap_or(0)),
-                (cums[i].total_cost.unwrap_or(0.0) - next.total_cost.unwrap_or(0.0)).max(0.0),
-                cums[i]
-                    .total_tokens_in
-                    .unwrap_or(0)
-                    .saturating_sub(next.total_tokens_in.unwrap_or(0)),
-                cums[i]
-                    .total_tokens_out
-                    .unwrap_or(0)
-                    .saturating_sub(next.total_tokens_out.unwrap_or(0)),
-            )
-        } else {
-            (
-                cums[i].total_count.unwrap_or(0),
-                cums[i].total_cost.unwrap_or(0.0),
-                cums[i].total_tokens_in.unwrap_or(0),
-                cums[i].total_tokens_out.unwrap_or(0),
-            )
-        };
-        out.push((
-            hour_label(*b),
-            Totals {
-                requests: reqs,
-                usage: Usage {
-                    input_tokens: tin,
-                    output_tokens: tout,
-                    cost_usd: cost,
-                    ..Default::default()
-                },
-            },
-        ));
-    }
-    Ok(out)
-}
-
-/// Start of the local hour containing `epoch`, `tz` seconds east of UTC.
-fn local_hour_start(epoch: u64, tz: i64) -> u64 {
-    let local = (epoch as i64 + tz) as u64;
-    local - local % 3600
+    Ok(hourly_from_cumulative(&bounds_local, &cums))
 }
 
 /// Local hourly buckets from JSONL logs (offline, CLI sessions only).
-/// Returns (label, totals) oldest-first for the last `hours` hours, bucketed in
-/// `tz` (seconds east of UTC; 0 = UTC).
+/// Returns (label, totals) oldest-first for the last `hours` hours.
 pub fn load_local_hourly(hours: usize, tz: i64) -> Vec<(String, Totals)> {
     let hours = hours.max(1);
+    let files = session_files();
+    let records = usage_records(&files);
+
+    // local hour buckets, same math as the account path but from record stamps
     let now = now_secs();
-    let current_hour = local_hour_start(now, tz);
-    let oldest = current_hour - (hours as u64 - 1) * 3600;
+    let (bounds_local, _) = hour_bounds(now, hours, tz);
+    let oldest = bounds_local.first().copied().unwrap_or(now);
+    let current = bounds_local.last().copied().unwrap_or(now);
 
-    // timestamp ISO → local hour bucket index
-    let bucket_of = |ts: &str| -> Option<u64> {
-        let ms: f64 = parse_iso_utc(ts)?;
+    let mut by_hour: std::collections::BTreeMap<u64, Totals> = std::collections::BTreeMap::new();
+    for r in &records {
+        let Some(ms) = parse_iso_utc(&r.timestamp) else {
+            continue;
+        };
         let h = local_hour_start((ms / 1000.0) as u64, tz);
-        (h >= oldest && h <= current_hour).then_some(h)
-    };
-
-    let mut by_hour: BTreeMap<u64, Totals> = BTreeMap::new();
-    for_each_usage_line(|_proj, ts, _model, u, _is_session| {
-        if let Some(h) = bucket_of(ts) {
-            by_hour.entry(h).or_default().add(u);
+        if h >= oldest && h <= current {
+            by_hour.entry(h).or_default().add(&r.usage);
         }
-    });
-    (0..hours)
-        .rev()
-        .map(|i| {
-            let h = current_hour - (i as u64) * 3600;
-            (hour_label(h), by_hour.get(&h).copied().unwrap_or_default())
-        })
+    }
+    bounds_local
+        .iter()
+        .map(|&h| (hour_label(h), by_hour.get(&h).copied().unwrap_or_default()))
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn date_in_tz_sign_is_east_positive() {
-        // 2026-09-27T20:00:00Z
-        let now = 1_790_539_200i64;
-        assert_eq!(date_in_tz(now, 0), "2026-09-27");
-        assert_eq!(date_in_tz(now, 19_800), "2026-09-28"); // +05:30
-        assert_eq!(date_in_tz(now, -28_800), "2026-09-27"); // -08:00 → noon
-        assert_eq!(date_in_tz(now, 28_800), "2026-09-28"); // +08:00 → 04:00
-    }
-
-    #[test]
-    fn local_day_of_honors_tz() {
-        let ts = "2026-09-27T20:00:00.000Z";
-        assert_eq!(day_of(ts, 0).as_deref(), Some("2026-09-27"));
-        assert_eq!(day_of(ts, 19_800).as_deref(), Some("2026-09-28")); // +05:30
-        assert_eq!(day_of("garbage", 0), None);
-    }
-
-    #[test]
-    fn local_hour_start_honors_tz() {
-        // 20:00Z with +05:30 → 01:30 local on the next day → hour start 01:00.
-        let e = 1_790_539_200u64;
-        assert_eq!(local_hour_start(e, 0), 1_790_539_200);
-        assert_eq!(local_hour_start(e, 19_800), 1_790_557_200);
-    }
-
-    #[test]
-    fn iso_day_start_is_utc_z_instant() {
-        // +05:30 local midnight = 18:30 UTC the previous day; never a '+'
-        // suffix (would decode as a space in the API query string).
-        assert_eq!(
-            iso_day_start("2026-09-28", 19_800),
-            "2026-09-27T18:30:00.000Z"
-        );
-        assert_eq!(iso_day_start("2026-09-28", 0), "2026-09-28T00:00:00.000Z");
-        assert_eq!(
-            iso_day_start("2026-09-28", -28_800),
-            "2026-09-28T08:00:00.000Z"
-        );
-        assert!(!iso_day_start("2026-09-28", 19_800).contains('+'));
-    }
-
-    #[test]
-    fn hour_bounds_align_utc_since_to_local_hour() {
-        // 2026-09-27T20:00:00Z with +05:30 → local 01:30 on 09-28.
-        let (local, utc) = hour_bounds(1_790_539_200, 2, 19_800);
-        assert_eq!(local, vec![1_790_553_600, 1_790_557_200]);
-        assert_eq!(utc, vec![1_790_533_800, 1_790_537_400]);
-        // minute-bearing offset must land on :30 UTC, not be hour-floored
-        assert_eq!(iso_instant(utc[1]), "2026-09-27T19:30:00.000Z");
-    }
 }

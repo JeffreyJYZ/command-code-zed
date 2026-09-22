@@ -8,7 +8,7 @@ yanked-forever on crates.io from the old crate).
 
 ```
 Cargo.toml         workspace (members: core, cli)
-core/              cmduse-core: shared pure logic, single source of truth
+core/              cmduse-core: pure logic + canonical data, no I/O
   plans.json       canonical plan table + name rules + monthly caps (see below)
   gating.json      canonical model categories + per-plan gating + hard-blocked
   conformance.json shared behavior vectors: Rust + TS tests both assert these
@@ -22,9 +22,15 @@ core/              cmduse-core: shared pure logic, single source of truth
                    opencode/src/{access,gating}.ts)
   src/dates.rs     ISO/UTC date helpers (parse_iso_utc, parse_tz_parts,
                    civil_from_days, iso_instant, now_secs, …)
-  src/wire.rs      API wire DTOs shared by the CLI's clients (Credits/Window/SubData/…)
+  src/reports.rs   usage aggregation: Usage/Totals, day+hour bucketing in a
+                   fixed offset, cumulative-difference math, local bucket fold
+  src/wire.rs      API wire DTOs (Credits/Window/SubData/UsageSummary/…)
 cli/               cmd-usage (bin `cmduse`), published to crates.io
-  src/…            thin UI: api client, snapshot, ANSI rendering, reports, redraw
+  src/…            the application: arg parsing, HTTP client + retry, snapshot
+                   assembly, report fetching, ANSI/markdown rendering, config,
+                   update check, live watch/redraw loop
+  src/reports.rs   I/O only: session-JSONL walk + account API pool; the math
+                   comes from core::reports
   src/mcp.rs       `cmduse mcp` MCP stdio server (hand-rolled JSON-RPC; tools
                    reuse the same output helpers as the CLI subcommands)
 opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
@@ -38,10 +44,11 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
 
 ## Core rules
 
-- **Shared logic lives in `core/` ONLY.** A bug in plan table / window math /
-  pace gate / dates gets ONE fix. `cli/` depends on `cmduse-core` by path.
-  UI-specific stuff stays local: ANSI constants + colored bars in cli — do
-  NOT move presentation into core.
+- **Pure logic and canonical data live in `core/`; the CLI is the application.**
+  A bug in plan table / window math / pace gate / dates / usage aggregation
+  gets ONE fix. `cli/` depends on `cmduse-core` by path and owns I/O only:
+  HTTP, filesystem, terminal, and formatting. Presentation stays local (ANSI
+  constants, colored bars, tables) — do NOT move it into core.
 - **Plan data lives in `core/plans.json`, gating data in `core/gating.json`,
   never in code.** `core/build.rs` bakes both into Rust consts; `opencode`
   imports the same files. Edit the JSON, not the generated consts or the TS.
@@ -131,8 +138,9 @@ a tool body would corrupt the stream, so tool text goes through the result
 envelope. `--tz` offsets are **east-positive seconds** (`parse_tz("+05:30")=+19800`),
 matching `tz_offset_suffix`; local = UTC + tz. All day/hour bucketing must use
 that sign — a flipped `now - tz` silently shifts every local bucket (fixed in
-0.6.2). `--tz` reaches the `--local` log path too (daily + hourly), not just
-the account API. Report output goes through `render::color_enabled()`
+0.6.2; the sign tests now live in `core/src/reports.rs`, together with the
+bucketing they guard). `--tz` reaches the `--local` log path too (daily +
+hourly), not just the account API. Report output goes through `render::color_enabled()`
 (NO_COLOR + stdout tty); never emit raw SGR when piped. Route exact local hour boundaries through `dates::iso_instant` — do NOT
 floor to a UTC hour, that breaks minute-bearing offsets like +05:30.
 `pace_eta` returns **seconds** (a duration); format it with `core::duration`,
