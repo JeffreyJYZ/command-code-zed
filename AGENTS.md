@@ -93,8 +93,11 @@ cd opencode && bun test && bun run typecheck
 ## Publishing (NEVER without explicit user go)
 
 - Order matters: `cmduse-core` first, then `cmd-usage`. `cli/Cargo.toml` dep
-  is `{ path = "../core", version = "0.6.7" }` — path resolves locally, the
+  is `{ path = "../core", version = "0.6.8" }` — path resolves locally, the
   `version` must already exist on crates.io for `cmd-usage` publish to work.
+  Bump core whenever the CLI starts using a new core API: `cargo package -p
+  cmd-usage` verifies against the *published* core, so a stale dep version
+  fails the tarball build with compile errors you won't see locally.
 - **crates.io version slots are FOREVER.** 0.2.0–0.4.0 were published+yanked
   on old `cmd-usage` — you can never re-upload those numbers. Current 0.x
   release line is 0.6.8 (first free slot past the dead 0.2–0.4 range). Skip
