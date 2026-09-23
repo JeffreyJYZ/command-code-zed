@@ -107,6 +107,11 @@ nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
   additive → minor, fix → patch); the CLI bumps per release as usual.
   `cli/Cargo.toml` depends on `{ path = "../core", version = "1" }`, so a new
   core minor/patch needs no CLI edit.
+- **Core's major always leads the CLI's.** When the CLI enters a major band
+  (e.g. CLI 1.0.0), publish `cmduse-core` at the next major (2.0.0) as a
+  line-separation release — no API change, note it in the description. This
+  keeps the two numbers from ever sitting in the same band and being read as a
+  pair again.
 - Publish order when core changed: `cmduse-core` first, then `cmd-usage` —
   `cargo package -p cmd-usage` verifies against the *published* core, so a
   core API the registry doesn't have yet fails the tarball build with compile
