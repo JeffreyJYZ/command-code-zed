@@ -221,16 +221,21 @@ export const commandCodeV2 = Plugin.define({
 			});
 		});
 
-		// Live model list in the background: fetch + plan gating + lane split
-		// (same pipeline as v1's provider.models hook), then replace the static
-		// seed. The transform call itself marks the registry changed — no
-		// explicit reload() needed. Runs whenever any credential source exists —
-		// resolves per attempt so a /connect after load still fills the list.
+		// Live model list: fetch + plan gating + lane split (same pipeline as
+		// v1's provider.models hook), replace the static seed, then re-fetch on
+		// an interval so models Command Code adds later show up without a
+		// service restart (the competitor bakes its list at publish time).
+		// The transform call itself marks the registry changed — no explicit
+		// reload() needed. Resolves credentials per attempt, so a /connect
+		// after load still fills the list.
 		const controller = new AbortController();
-		void (async () => {
-			const key = await credentialKey(ctx);
-			if (!key) return;
+		let refreshing = false;
+		const refresh = async () => {
+			if (refreshing || controller.signal.aborted) return;
+			refreshing = true;
 			try {
+				const key = await credentialKey(ctx);
+				if (!key) return;
 				const split = await loadModels(key);
 				if (controller.signal.aborted) return;
 				await ctx.provider.transform((editor) => {
@@ -244,9 +249,18 @@ export const commandCodeV2 = Plugin.define({
 					);
 				});
 			} catch (e) {
-				console.warn("[command-code] live model list unavailable, keeping static seed:", e);
+				console.warn("[command-code] live model list unavailable, keeping previous list:", e);
+			} finally {
+				refreshing = false;
 			}
-		})();
-		return () => controller.abort();
+		};
+		void refresh();
+		// 30 min: comfortably past models.ts's 5-min cache, so every tick is a
+		// real fetch. Guarded against overlap by `refreshing`.
+		const timer = setInterval(() => void refresh(), 30 * 60 * 1000);
+		return () => {
+			controller.abort();
+			clearInterval(timer);
+		};
 	},
 });

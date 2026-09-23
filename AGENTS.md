@@ -38,6 +38,9 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
                    v1 (server()) + v2 (setup()) entrypoints; no core crate;
                    imports ../../core/{gating,conformance}.json; usage
                    rendering delegates to the cmduse CLI via src/cli.ts)
+  src/v2.ts        v2 half: providers + /connect integration + live model list
+                   (static seed, then fetch + gating, re-fetched every 30 min —
+                   unlike opencode-cmd-provider, which bakes its list)
   src/tui.ts       CLI/TUI half (package ./tui export): /usage slash command
                    spawns cmduse client-side and renders in a dialog — the
                    server half's synthetic messages are not TUI-visible
