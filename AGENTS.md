@@ -44,14 +44,6 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
   src/v2.ts        v2 half: providers + /connect integration + live model list
                    (static seed, then fetch + gating, re-fetched every 30 min —
                    unlike opencode-cmd-provider, which bakes its list)
-  src/usagelog.ts  per-request usage log for mpc: every finished assistant
-                   message (message.updated with time.completed) appends one
-                   JSON line (ts, model, tokens, costUsd) to
-                   $XDG_CACHE_HOME/mpc/usage.jsonl (MPC_USAGE_LOG overrides),
-                   deduped per message id. v1 hooks.event and v2
-                   ctx.event.subscribe both feed it. The CommandCode account
-                   API exposes no per-model split, so this is the only complete
-                   per-model source; mpc --usage reads it
   src/tui.ts       CLI/TUI half (package ./tui export): /usage slash command
                    spawns cmduse client-side and renders in a dialog — the
                    server half's synthetic messages are not TUI-visible
@@ -96,32 +88,18 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
 
 ## Consumers (sibling repo, same owner)
 
-`mpc` (`~/dev/clis/oc-cmd-compare`) reads this workspace: it shells out to `cmduse` and reads the
-plugin's usage log. Stable contracts, not incidental output:
+`mpc` (`~/dev/clis/oc-cmd-compare`) reads this workspace: it shells out to `cmduse`, and takes the
+per-model mix from opencode's own message store (`~/.local/share/opencode/opencode.db`) rather than
+from this plugin. Stable contracts, not incidental output:
 
 | contract | consumer |
 | --- | --- |
 | `cmduse plans --json` — plan name/price/credits/windows | mpc plan table |
 | `cmduse -1 --json` — `summary.requests`/`summary.cost`, `periodEnd` | mpc coverage line + billing window |
 | `cmduse model --json [--since ISO]` — `{source, since, models:{id: totals}}` | mpc `--usage` |
-| `~/.cache/mpc/usage.jsonl` line — `ts, provider, model, input, cacheRead, cacheWrite, output, costUsd, messageID` | mpc `--usage` |
 
 Changing any of those shapes means updating mpc in the same effort; `CMDUSE_BIN` lets mpc test a
 `cmdusedev` build. Local commits only — never publish or push without explicit go.
-
-## Usage log (feeds `mpc --usage`)
-
-- **Superseded for opencode traffic.** `mpc` now reads opencode's own message
-  store (`~/.local/share/opencode/opencode.db`) as its primary source — assistant
-  rows carry cost/tokens/model for every provider, backfilled. This log remains a
-  fallback for when that DB is missing, and covers harnesses that do not persist
-  messages. Keep the line shape stable either way.
-- Neither `/alpha/usage/summary` nor Studio's API surface (same endpoint) has a
-  model dimension. Logging is best-effort and must never throw into a request.
-- Log once per message id, only when `time.completed` is set (message.updated
-  fires repeatedly while streaming), and skip empty token records.
-- Additive on the plugin's own version line (npm 0.2.x); no cmduse change needed
-  to consume it.
 
 ## Build & test
 
@@ -174,8 +152,7 @@ nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
   entrypoint, `@opencode/plugin` + `@opencode-ai/plugin` deps, both external
   in the bun build; v1 floor is the 1.18.29 object entrypoint); 0.2.x also
   ships a TUI half (`./tui` export → `src/tui.ts`, `solid-js` devDep for the
-  test runner only — opencode resolves the TUI import at runtime). 0.2.4 adds
-  `src/usagelog.ts` (per-request usage log for `mpc --usage`).
+  test runner only — opencode resolves the TUI import at runtime).
 - **npm publish is interactive: it fails from the agent shell** (`EOTP`, prints
   an auth URL). Build first (`cd opencode && bun run build`) so `dist/` is
   current, then the user runs plain `npm publish` themselves — it opens a

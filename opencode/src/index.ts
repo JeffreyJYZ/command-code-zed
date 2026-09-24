@@ -10,7 +10,6 @@ import { API_BASE, whoami } from "./api";
 import { runCmduse } from "./cli";
 import { resolveKey } from "./key";
 import { loadModels } from "./models";
-import { logEvent } from "./usagelog";
 import { commandCodeV2, PROVIDER_BASE } from "./v2";
 
 type SdkModel = {
@@ -122,12 +121,6 @@ export const CommandCodePlugin: PluginV1 = async (_input) => {
 					},
 				},
 			],
-		},
-
-		// Every finished assistant message is appended to the mpc usage log, so
-		// `mpc --usage` can project the real mix (opencode traffic only).
-		event: async ({ event }) => {
-			logEvent(event);
 		},
 
 		// Register the Claude and OpenAI-compatible lanes. The two provider
