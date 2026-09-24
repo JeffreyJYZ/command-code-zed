@@ -146,7 +146,7 @@ nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
   errors you won't see locally. If core did not change, publish the CLI alone.
 - **crates.io version slots are FOREVER.** 0.2.0–0.4.0 were published+yanked
   on old `cmd-usage` — you can never re-upload those numbers. Current 0.x
-  release line is 0.6.11 (first free slot past the dead 0.2–0.4 range). Skip
+  release line is 0.6.12 (first free slot past the dead 0.2–0.4 range). Skip
   taken numbers, never fight the 400.
 - Clean tree required (commit first, incl. Cargo.lock).
 - Homebrew after every cmd-usage release: `JeffreyJYZ/homebrew-tap`,
