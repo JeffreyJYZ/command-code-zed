@@ -2,7 +2,13 @@ use crate::api;
 use crate::render::{Snapshot, CYAN, RESET};
 use std::io::Write;
 
-pub fn snapshot() -> Snapshot {
+/// `spinner` draws the animated "fetching usage…" line on the controlling
+/// terminal while the network fetches run. It is only wanted for the live
+/// in-place dashboard: `--once`, `--json`, the MCP `usage` tool and the
+/// statusline all render elsewhere, and a spinner written to /dev/tty would
+/// paint over whatever program spawned them (e.g. a TUI sidebar). Callers pass
+/// `false` there.
+pub fn snapshot(spinner: bool) -> Snapshot {
     let mut s = empty_snapshot();
 
     let key = match api::api_key() {
@@ -17,27 +23,29 @@ pub fn snapshot() -> Snapshot {
     // doesn't look hung. Written to /dev/tty directly: in watch mode the main
     // thread holds the stdout lock during redraw, and stderr may be redirected.
     let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let stop2 = stop.clone();
-    let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    let writer = std::thread::spawn(move || {
-        let mut tty = std::fs::OpenOptions::new()
-            .write(true)
-            .open("/dev/tty")
-            .ok();
-        let mut i = 0;
-        while !stop2.load(std::sync::atomic::Ordering::Relaxed) {
-            if let Some(f) = tty.as_mut() {
-                write!(
-                    f,
-                    "\r\x1b[2K{CYAN}fetching usage… {}{RESET}",
-                    frames[i % frames.len()]
-                )
+    let writer = spinner.then(|| {
+        let stop = stop.clone();
+        let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        std::thread::spawn(move || {
+            let mut tty = std::fs::OpenOptions::new()
+                .write(true)
+                .open("/dev/tty")
                 .ok();
-                f.flush().ok();
+            let mut i = 0;
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                if let Some(f) = tty.as_mut() {
+                    write!(
+                        f,
+                        "\r\x1b[2K{CYAN}fetching usage… {}{RESET}",
+                        frames[i % frames.len()]
+                    )
+                    .ok();
+                    f.flush().ok();
+                }
+                i += 1;
+                std::thread::sleep(std::time::Duration::from_millis(80));
             }
-            i += 1;
-            std::thread::sleep(std::time::Duration::from_millis(80));
-        }
+        })
     });
 
     // three endpoints in parallel — slowest one sets the latency
@@ -58,11 +66,15 @@ pub fn snapshot() -> Snapshot {
     };
 
     stop.store(true, std::sync::atomic::Ordering::Relaxed);
-    let _ = writer.join();
-    if let Ok(mut f) = std::fs::OpenOptions::new().write(true).open("/dev/tty") {
-        // erase spinner line; main redraws status line right after
-        write!(f, "\r\x1b[2K").ok();
-        f.flush().ok();
+    if let Some(writer) = writer {
+        let _ = writer.join();
+    }
+    if spinner {
+        if let Ok(mut f) = std::fs::OpenOptions::new().write(true).open("/dev/tty") {
+            // erase spinner line; main redraws status line right after
+            write!(f, "\r\x1b[2K").ok();
+            f.flush().ok();
+        }
     }
 
     let mut errs: Vec<String> = Vec::new();

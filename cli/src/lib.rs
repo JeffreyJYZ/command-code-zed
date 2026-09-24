@@ -24,7 +24,7 @@ mod render_tests;
 #[cfg(test)]
 mod main_tests;
 
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 
 use crate::render::{BOLD, DIM, RESET};
 
@@ -152,7 +152,7 @@ pub fn run() {
         if let Some(msg) = &update {
             eprintln!("{msg}");
         }
-        let s = snapshot::snapshot();
+        let s = snapshot::snapshot(false);
         if args.json {
             println!("{}", render::render_json(&s));
         } else if args.plain || !render::color_enabled() {
@@ -184,8 +184,11 @@ pub fn run() {
                                                  // cap-hit notifications: fire once on the rising edge into "exceeded"
     let mut was_exceeded_5h = false;
     let mut was_exceeded_wk = false;
+    // Only the live dashboard wants the /dev/tty spinner; a piped run must not
+    // paint the terminal it was spawned from.
+    let spinner = !args.plain && std::io::stdout().is_terminal();
     loop {
-        let s = snapshot::snapshot();
+        let s = snapshot::snapshot(spinner);
         let (rows, cols) = term_size().unwrap_or((0, 0));
         // <8x4 is not a usable dashboard even in compact form: keep drawing
         // the compact line anyway (clip keeps it stable), no hard exit.
@@ -580,7 +583,7 @@ fn plans_cmd(args: &cli::Args) {
 
 /// One-shot dashboard, plain text (no SGR) — the MCP `usage` tool body.
 pub(crate) fn usage_output() -> String {
-    render::render_plain(&snapshot::snapshot())
+    render::render_plain(&snapshot::snapshot(false))
 }
 
 /// Plan comparison table. `colors` off for MCP, `render::color_enabled()` for
@@ -715,7 +718,7 @@ fn output_fmt(args: &cli::Args) -> report_render::Fmt {
 
 fn statusline_cmd(args: &cli::Args) {
     let cfg = config::load();
-    let s = snapshot::snapshot();
+    let s = snapshot::snapshot(false);
     let plan = render::plan_name(&s.sub.plan_id);
     let cap = render::plan_monthly_cap(&s.sub.plan_id).unwrap_or(0.0);
     if let Some(e) = &s.err {
