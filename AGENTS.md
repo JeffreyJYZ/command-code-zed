@@ -111,9 +111,13 @@ Changing any of those shapes means updating mpc in the same effort; `CMDUSE_BIN`
 
 ## Usage log (feeds `mpc --usage`)
 
-- The provider plugin owns the only complete per-model usage record: neither
-  `/alpha/usage/summary` nor Studio's API surface (same endpoint) has a model
-  dimension. Logging is best-effort and must never throw into a request.
+- **Superseded for opencode traffic.** `mpc` now reads opencode's own message
+  store (`~/.local/share/opencode/opencode.db`) as its primary source — assistant
+  rows carry cost/tokens/model for every provider, backfilled. This log remains a
+  fallback for when that DB is missing, and covers harnesses that do not persist
+  messages. Keep the line shape stable either way.
+- Neither `/alpha/usage/summary` nor Studio's API surface (same endpoint) has a
+  model dimension. Logging is best-effort and must never throw into a request.
 - Log once per message id, only when `time.completed` is set (message.updated
   fires repeatedly while streaming), and skip empty token records.
 - Additive on the plugin's own version line (npm 0.2.x); no cmduse change needed
