@@ -12,7 +12,7 @@
 import type { RGBA } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
 import { Plugin } from "@opencode/plugin/tui"
-import { For, Show, createMemo, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { runCmduse } from "./cli"
 import { loadMeta, loadUsage } from "./sidebar/data"
 import {
@@ -61,9 +61,15 @@ function useRows(activeModelId: () => string | undefined, active: () => boolean)
 			// cmduse missing/offline: keep the last snapshot
 		}
 	}
-	void refresh()
-	const timer = setInterval(() => void refresh(), POLL_MS)
-	onCleanup(() => clearInterval(timer))
+	// Poll only while this session is on one of our models. The panel returns no
+	// rows otherwise, but an unconditional poll still spawned cmduse for every
+	// session on every provider — and cmduse's spinner writes to /dev/tty.
+	createEffect(() => {
+		if (!active()) return
+		void refresh()
+		const timer = setInterval(() => void refresh(), POLL_MS)
+		onCleanup(() => clearInterval(timer))
+	})
 
 	return createMemo(() => {
 		if (!active()) return []

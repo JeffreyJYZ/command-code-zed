@@ -13,13 +13,23 @@ const CMDUSE = ["cmduse", "/opt/homebrew/bin/cmduse", "/usr/local/bin/cmduse"]
 const MPC = ["mpc", join(homedir(), ".bun/bin/mpc"), "/opt/homebrew/bin/mpc"]
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000
 
+/** `detached` is load-bearing, not tidiness: it starts the child in its own
+ * session, so it has no controlling terminal. cmduse's snapshot() paints a
+ * "fetching usage…" spinner straight to /dev/tty — piping stdout/stderr does
+ * not stop it — which would corrupt the opencode TUI this process inherits its
+ * tty from. Detaching makes that open fail; stdout/stderr stay piped. */
+export const SPAWN_OPTIONS: Parameters<typeof spawn>[2] = {
+	stdio: ["ignore", "pipe", "pipe"],
+	detached: true,
+}
+
 function run(bin: string, args: string[]): Promise<string> {
 	return new Promise((resolve, reject) => {
-		const child = spawn(bin, args, { stdio: ["ignore", "pipe", "pipe"] })
+		const child = spawn(bin, args, SPAWN_OPTIONS)
 		const out: Buffer[] = []
 		const err: Buffer[] = []
-		child.stdout.on("data", (d: Buffer) => out.push(d))
-		child.stderr.on("data", (d: Buffer) => err.push(d))
+		child.stdout?.on("data", (d: Buffer) => out.push(d))
+		child.stderr?.on("data", (d: Buffer) => err.push(d))
 		child.on("error", reject)
 		child.on("close", (code) =>
 			code === 0

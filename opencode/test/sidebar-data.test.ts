@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { parseMpcJson, parseUsageJson } from "../src/sidebar/data"
+import { SPAWN_OPTIONS, parseMpcJson, parseUsageJson } from "../src/sidebar/data"
 
 const USAGE = JSON.stringify({
 	error: null,
@@ -86,4 +86,11 @@ test("parseMpcJson keeps the mpc key and a local key for lookup", () => {
 	)
 	expect(meta.get("tencenthy3")).toBeDefined()
 	expect(meta.get("tencenthy3")).toBe(meta.get("tencenthy3")!)
+})
+
+// Regression: cmduse's snapshot() writes a "fetching usage…" spinner directly
+// to /dev/tty, so without `detached` (no controlling terminal) it overpaints
+// the opencode TUI prompt on every poll.
+test("spawns cmduse with no controlling terminal", () => {
+	expect(SPAWN_OPTIONS.detached).toBe(true)
 })
