@@ -86,6 +86,20 @@ Auth, in host order: opencode's own connection — **`/connect` and pick
 providers stay `activation: "auto"`, so a later `/connect` lights them up
 without a restart.
 
+### Sidebar
+
+While a session uses a `command-code*` model, the session sidebar grows a **Command Code**
+section (toggle with `ctrl+x b`):
+
+- plan, price and monthly credits used
+- 5-hour and weekly windows: used / cap, percent, reset countdown
+- this period's requests and spend
+- the active model: tier, monthly allowance, $/M rates (in/out, cache read), Intelligence, Tok/s
+
+Usage comes from the `cmduse` CLI (polled every 30s); the model catalog comes from `mpc --json`,
+cached for 6h — install it with `bun link` in the sibling `oc-cmd-compare` checkout, or the section
+simply omits those rows. Non-CommandCode models show nothing.
+
 ## MCP server
 
 `cmduse mcp` runs an MCP stdio server (hand-rolled JSON-RPC, no extra deps)

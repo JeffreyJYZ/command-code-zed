@@ -44,9 +44,15 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
   src/v2.ts        v2 half: providers + /connect integration + live model list
                    (static seed, then fetch + gating, re-fetched every 30 min —
                    unlike opencode-cmd-provider, which bakes its list)
-  src/tui.ts       CLI/TUI half (package ./tui export): /usage slash command
-                   spawns cmduse client-side and renders in a dialog — the
-                   server half's synthetic messages are not TUI-visible
+  src/tui.tsx      TUI half (package ./tui export), two hosts one module:
+                   v1 `tui(api)` registers `sidebar_content`, v2 `setup(ctx)`
+                   claims `sidebar.content`; v2 also keeps the /cmd-usage slash
+                   command (spawns cmduse client-side; the server half's
+                   synthetic messages are not TUI-visible)
+  src/sidebar/rows.ts   pure row builder for the sidebar (usage + model rows)
+  src/sidebar/data.ts   spawns: cmduse for usage (polled), mpc --json for the
+                   per-model catalog (disk-cached 6h; mpc scrapes live docs)
+  scripts/build-tui.ts  builds dist/tui.js with @opentui/solid's transform
 ```
 
 ## Core rules
@@ -97,6 +103,7 @@ from this plugin. Stable contracts, not incidental output:
 | `cmduse plans --json` — plan name/price/credits/windows | mpc plan table |
 | `cmduse -1 --json` — `summary.requests`/`summary.cost`, `periodEnd` | mpc coverage line + billing window |
 | `cmduse model --json [--since ISO]` — `{source, since, models:{id: totals}}` | mpc `--usage` |
+| `mpc --json` — `{rows:[{key, name, cc:{allowance, pricing, ability, tps}}]}` | the sidebar's model rows (allowance, rates, Intelligence, Tok/s) |
 
 Changing any of those shapes means updating mpc in the same effort; `CMDUSE_BIN` lets mpc test a
 `cmdusedev` build. Local commits only — never publish or push without explicit go.
@@ -169,6 +176,12 @@ nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
   version in the user's `plugins` array.
 
 ## Learned-the-hard-way
+
+The sidebar's TUI bundle must be compiled with `@opentui/solid`'s solid transform
+(`scripts/build-tui.ts`), not plain `bun build`: a plain JSX emit evaluates props at
+element-creation time, so the panel freezes at mount and never repaints when the session model
+changes. `@opentui/*` and `solid-js` stay external and the slice stays one bundle because both
+TUI hosts rewrite the entry's imports to their own module instances.
 
 API endpoints, cumulative-diff reports, TLS retry, watch-mode redraw rules
 (frame's last line has NO trailing newline; frame-shrink = `\x1b[1B` +
