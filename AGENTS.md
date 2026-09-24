@@ -161,7 +161,7 @@ nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
   ships a TUI half (`./tui` export → `src/tui.ts`, `solid-js` devDep for the
   test runner only — opencode resolves the TUI import at runtime). 0.2.5 adds
   the session sidebar (`src/sidebar/*`, `src/tui.tsx`) which consumes
-  `mpc --json` for model allowance/rates/benchmarks; 0.2.6 fixed the sidebar's
+  `mpc --json` for model allowance/rates/benchmarks; 0.2.7 fixed the sidebar's
   app-slot claim painting a stray line in the prompt area (return `void` from a
   `keymap.layer` mount, as opencode's own /btw does, not `null`). 0.2.4 is burned: its
   tarball never landed, so it is deprecated and skipped.
