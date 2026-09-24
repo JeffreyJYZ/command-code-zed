@@ -26,7 +26,10 @@ core/              cmduse-core: pure logic + canonical data, no I/O
   src/reports.rs   usage aggregation: Usage/Totals, day+hour bucketing in a
                    fixed offset, cumulative-difference math, local bucket fold
   src/wire.rs      API wire DTOs (Credits/Window/SubData/UsageSummary/…)
-cli/               cmd-usage (bin `cmduse`), published to crates.io
+cli/               cmd-usage, published to crates.io
+  src/lib.rs       `pub fn run()` — the CLI body; `src/main.rs` and
+                   `src/bin/cmdusedev.rs` are thin entry points (the dev twin
+                   lets a local build avoid shadowing the installed `cmduse`)
   src/…            the application: arg parsing, HTTP client + retry, snapshot
                    assembly, report fetching, ANSI/markdown rendering, config,
                    update check, live watch/redraw loop

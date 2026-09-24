@@ -15,9 +15,11 @@ cmduse \- live Command Code (commandcode.ai) usage dashboard and reporter
 [\fB\-\-hours\fR \fIn\fR] [\fB\-\-json\fR] [\fB\-\-csv\fR] [\fB\-\-local\fR]
 .br
 .B cmduse model
+[\fB\-\-days\fR \fIn\fR | \fB\-\-since\fR \fIISO\fR]
 [\fB\-\-json\fR] [\fB\-\-csv\fR]
 .br
 .B cmduse session
+[\fB\-\-days\fR \fIn\fR | \fB\-\-since\fR \fIISO\fR]
 [\fB\-\-json\fR] [\fB\-\-csv\fR]
 .br
 .B cmduse models
@@ -93,9 +95,11 @@ and honors \fB\-\-tz\fR.  \fB\-\-json\fR emits one object
 .B model
 Local usage grouped by model, read from
 .IR ~/.commandcode/projects
-(offline; the usage API exposes no per\-model split).  \fB\-\-json\fR and
-\fB\-\-csv\fR supported; the \fITokens\fR column sums input, output, cache
-read, and cache write.
+(offline; the usage API exposes no per\-model split).  All\-time by default:
+\fB\-\-days\fR \fIn\fR or \fB\-\-since\fR \fIISO\fR bounds the window, and
+\fB\-\-json\fR reports \fIsource\fR + \fIsince\fR alongside \fImodels\fR.
+\fB\-\-json\fR and \fB\-\-csv\fR supported; the \fITokens\fR column sums
+input, output, cache read, and cache write.
 .TP
 .B session
 Local usage grouped by project/session directory, same offline file.

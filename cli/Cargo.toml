@@ -13,6 +13,12 @@ readme = "README.md"
 name = "cmduse"
 path = "src/main.rs"
 
+# Dev twin: same code, different name, so a local build never shadows the
+# installed `cmduse` (and consumers can target it via CMDUSE_BIN).
+[[bin]]
+name = "cmdusedev"
+path = "src/bin/cmdusedev.rs"
+
 [dependencies]
 cmduse-core = { path = "../core", version = "1" }
 ureq = { version = "2", features = ["json"] }

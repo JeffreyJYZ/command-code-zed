@@ -92,8 +92,23 @@ fn usage_records(files: &[(String, String)]) -> Vec<UsageRecord> {
 }
 
 pub fn load_local(tz: i64) -> LocalData {
+    load_local_since(tz, None)
+}
+
+/// Local usage restricted to records at or after `since_secs` (epoch seconds).
+/// Local JSONL is all-time otherwise, so a caller wanting one billing period
+/// must pass a bound.
+pub fn load_local_since(tz: i64, since_secs: Option<f64>) -> LocalData {
     let files = session_files();
-    bucket_records(&usage_records(&files), tz)
+    let records = usage_records(&files);
+    let kept: Vec<UsageRecord> = match since_secs {
+        None => records,
+        Some(since) => records
+            .into_iter()
+            .filter(|r| parse_iso_utc(&r.timestamp).is_none_or(|t| t >= since))
+            .collect(),
+    };
+    bucket_records(&kept, tz)
 }
 
 // ---- Account-wide daily usage (API, all harnesses) ----
@@ -193,4 +208,20 @@ pub fn load_local_hourly(hours: usize, tz: i64) -> Vec<(String, Totals)> {
         .iter()
         .map(|&h| (hour_label(h), by_hour.get(&h).copied().unwrap_or_default()))
         .collect()
+}
+
+#[cfg(test)]
+mod window_tests {
+    use cmduse_core::dates::parse_iso_utc;
+
+    #[test]
+    fn since_bound_is_inclusive() {
+        let since = parse_iso_utc("2026-08-27T00:00:00Z").unwrap();
+        let keep = |ts: &str| parse_iso_utc(ts).is_none_or(|t| t >= since);
+        assert!(keep("2026-08-27T00:00:00Z"));
+        assert!(keep("2026-09-01T12:00:00Z"));
+        assert!(!keep("2026-08-26T23:59:59Z"));
+        // unparseable timestamps are kept rather than silently dropped
+        assert!(keep(""));
+    }
 }

@@ -18,6 +18,8 @@ pub struct Args {
     pub gated: bool,
     pub tz: Option<i64>,
     pub dismiss_update: bool,
+    /// ISO-8601 start of the window, for `model`/`session`.
+    pub since: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -130,6 +132,13 @@ pub(crate) fn parse_args_from(
                     Ok(n) => a.last = Some(n.clamp(1, 365)),
                     Err(_) => return Err("--days needs a number (e.g. --days 7)".into()),
                 }
+            }
+            Long("since") => {
+                let v = need_value(&mut parser, "--since needs an ISO-8601 time")?;
+                if cmduse_core::dates::parse_iso_utc(&v).is_none() {
+                    return Err(format!("--since: not an ISO-8601 datetime: '{v}'"));
+                }
+                a.since = Some(v);
             }
             Long("hours") => {
                 let v = need_value(
@@ -291,8 +300,8 @@ Usage: cmduse [options]           Live plan dashboard (watch mode)
        cmduse -1                  One-shot dashboard
        cmduse daily [--days N] [--json]    Account usage by day (all harnesses)
        cmduse hourly [--hours N] [--json]  Account usage by hour (all harnesses)
-       cmduse model [--json]      Local usage by model
-       cmduse session [--json]    Local usage by project/session
+       cmduse model [--days N | --since ISO] [--json]   Local usage by model
+       cmduse session [--days N | --since ISO] [--json] Local usage by project/session
        cmduse models              Live model list from the Command Code API
        cmduse plans               Plan comparison table
        cmduse statusline          Compact one-liner for prompts/tmux

@@ -338,9 +338,19 @@ pub fn project_table(by_project: &crate::reports::ByProject, fmt: Fmt, colors: b
     }
 }
 
-pub fn model_table(by_model: &crate::reports::ByModel, fmt: Fmt, colors: bool) -> String {
+pub fn model_table(
+    by_model: &crate::reports::ByModel,
+    fmt: Fmt,
+    colors: bool,
+    since: Option<&str>,
+) -> String {
     match fmt {
-        Fmt::Json => serde_json::json!({ "models": totals_map(by_model.iter()) }).to_string(),
+        Fmt::Json => serde_json::json!({
+            "source": "local",
+            "since": since,
+            "models": totals_map(by_model.iter()),
+        })
+        .to_string(),
         Fmt::Csv => {
             let mut o = String::from("model,requests,tokens,cost_usd\n");
             for (m, t) in by_model {

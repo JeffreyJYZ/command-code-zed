@@ -50,8 +50,10 @@ cmduse daily --tz +05:30     # bucket by a fixed UTC offset instead of UTC
 cmduse daily --local --tz +05:30  # ...the local-log path honors --tz too
 cmduse hourly --hours 6      # account usage by hour (default 24, max 168)
 cmduse hourly --local        # hourly from local CLI logs (offline)
-cmduse model                 # local usage by model
-cmduse session               # local usage by project
+cmduse model                 # local usage by model (all time)
+cmduse model --days 30       # ...only the last 30 days
+cmduse model --since 2026-08-27T00:00:00Z   # ...or since a billing-period start
+cmduse session --days 30     # local usage by project, same window flags
 cmduse models                # live model list from the Command Code API
 cmduse models --gated        # ...only models the current plan allows
 cmduse models --gated --json # every model annotated with allowed + reason
@@ -182,7 +184,7 @@ cmduse config set dismissed_update=0.6.8
 ## Data sources
 
 - **Dashboard / daily / hourly / statusline**: Command Code API with your account key. Daily and hourly cover **every harness** that used the key (CLI, Provider API, other agents).
-- **model / session / daily --local**: local session logs at `~/.commandcode/projects` — offline, but only what the CLI recorded.
+- **model / session / daily --local**: local session logs at `~/.commandcode/projects` — offline, but only what the CLI recorded. `model`/`session` are all-time unless given `--days N` or `--since <ISO>`; the usage API has no per-model split, so local logs are the only per-model source.
 
 ## Requirements
 

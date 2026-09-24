@@ -27,6 +27,17 @@ cargo install cmd-usage                # any platform with Rust
 ```
 
 Then run `cmduse` for the live dashboard, or `cmduse plans` / `cmduse models`.
+
+`cmduse model [--days N | --since ISO] [--json]` reports local per-model usage; without a window it
+is all-time, so pass one when you mean a billing period. `--json` includes `source` and `since`.
+There is no account-side per-model endpoint (the API only exposes totals), so local logs are the
+only per-model source and may miss other machines or harnesses.
+
+### Development binary
+
+`cargo build --bin cmdusedev` builds the same program under a different name, so a local build
+never shadows the Homebrew-installed `cmduse`. Tools that shell out can target it via
+`CMDUSE_BIN=/path/to/cmdusedev`.
 Full usage, config, and statusline docs live in **[cli/README.md](cli/README.md)**.
 
 ## Build

@@ -32,6 +32,19 @@ fn tz_offsets() {
 }
 
 #[test]
+fn model_window_flags() {
+    let a = parse_args_from(argv(&["model", "--days", "30", "--json"])).unwrap();
+    assert_eq!(a.subcmd, Some(SubCmd::Model));
+    assert_eq!(a.last, Some(30));
+
+    let b = parse_args_from(argv(&["model", "--since", "2026-08-27T00:00:00Z"])).unwrap();
+    assert_eq!(b.since.as_deref(), Some("2026-08-27T00:00:00Z"));
+
+    // a bad timestamp fails at parse time, not silently at scan time
+    assert!(parse_args_from(argv(&["model", "--since", "yesterday"])).is_err());
+}
+
+#[test]
 fn parses_flags_all_forms() {
     let a = parse_args_from(argv(&["-1", "-i", "30s", "--tz", "+05:30", "--json"])).unwrap();
     assert!(a.once);
