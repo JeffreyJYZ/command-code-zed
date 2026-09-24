@@ -44,6 +44,14 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
   src/v2.ts        v2 half: providers + /connect integration + live model list
                    (static seed, then fetch + gating, re-fetched every 30 min —
                    unlike opencode-cmd-provider, which bakes its list)
+  src/usagelog.ts  per-request usage log for mpc: every finished assistant
+                   message (message.updated with time.completed) appends one
+                   JSON line (ts, model, tokens, costUsd) to
+                   $XDG_CACHE_HOME/mpc/usage.jsonl (MPC_USAGE_LOG overrides),
+                   deduped per message id. v1 hooks.event and v2
+                   ctx.event.subscribe both feed it. The CommandCode account
+                   API exposes no per-model split, so this is the only complete
+                   per-model source; mpc --usage reads it
   src/tui.ts       CLI/TUI half (package ./tui export): /usage slash command
                    spawns cmduse client-side and renders in a dialog — the
                    server half's synthetic messages are not TUI-visible
@@ -85,6 +93,16 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
   READMEs (`README.md`, `cli/README.md`), the `cli/cmduse.1` man page, and
   this file in the same commit — never a follow-up "docs" commit. Check for
   stale version refs and stale option/flag lists before committing.
+
+## Usage log (feeds `mpc --usage`)
+
+- The provider plugin owns the only complete per-model usage record: neither
+  `/alpha/usage/summary` nor Studio's API surface (same endpoint) has a model
+  dimension. Logging is best-effort and must never throw into a request.
+- Log once per message id, only when `time.completed` is set (message.updated
+  fires repeatedly while streaming), and skip empty token records.
+- Additive on the plugin's own version line (npm 0.2.x); no cmduse change needed
+  to consume it.
 
 ## Build & test
 

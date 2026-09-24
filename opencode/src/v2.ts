@@ -20,6 +20,7 @@ import { runCmduse } from "./cli";
 import { KNOWN_MODELS } from "./gating";
 import { resolveKey } from "./key";
 import { isClaude, loadModels, type CmdModel } from "./models";
+import { logEvent } from "./usagelog";
 
 export const PLUGIN_ID = "command-code";
 export const PROVIDER_BASE = "https://api.commandcode.ai/provider/v1";
@@ -146,6 +147,17 @@ export const commandCodeV2 = Plugin.define({
 			console.warn(
 				`[command-code] no API key found. Run /connect and choose "${INTEGRATION_NAME}", or \`cmd login\` (~/.commandcode/auth.json), or set CMD_API_KEY.`,
 			);
+		}
+
+		// Same usage log as v1: subscribe to host events if the context offers
+		// them, defensively so a shape change never breaks plugin setup.
+		try {
+			const events = (
+				ctx as { event?: { subscribe?: (fn: (event: unknown) => void) => void } }
+			).event;
+			events?.subscribe?.((event) => logEvent(event));
+		} catch {
+			// no event surface on this host version
 		}
 
 		// /connect entry + env discovery for both lanes. Methods are additive
