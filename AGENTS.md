@@ -94,6 +94,21 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
   this file in the same commit — never a follow-up "docs" commit. Check for
   stale version refs and stale option/flag lists before committing.
 
+## Consumers (sibling repo, same owner)
+
+`mpc` (`~/dev/clis/oc-cmd-compare`) reads this workspace: it shells out to `cmduse` and reads the
+plugin's usage log. Stable contracts, not incidental output:
+
+| contract | consumer |
+| --- | --- |
+| `cmduse plans --json` — plan name/price/credits/windows | mpc plan table |
+| `cmduse -1 --json` — `summary.requests`/`summary.cost`, `periodEnd` | mpc coverage line + billing window |
+| `cmduse model --json [--since ISO]` — `{source, since, models:{id: totals}}` | mpc `--usage` |
+| `~/.cache/mpc/usage.jsonl` line — `ts, provider, model, input, cacheRead, cacheWrite, output, costUsd, messageID` | mpc `--usage` |
+
+Changing any of those shapes means updating mpc in the same effort; `CMDUSE_BIN` lets mpc test a
+`cmdusedev` build. Local commits only — never publish or push without explicit go.
+
 ## Usage log (feeds `mpc --usage`)
 
 - The provider plugin owns the only complete per-model usage record: neither
