@@ -80,6 +80,21 @@ describe("modelRows", () => {
 		expect(rows[5]).toEqual(["Intelligence", "39.5"])
 		expect(rows[6]).toEqual(["Tok/s", "247"])
 	})
+	test("puts period usage under the model name when known", () => {
+		const rows = modelRows(
+			{ key: "deepseekv41flash", name: "DeepSeek V4.1 Flash" },
+			{ requests: 1_234, cost: 8.4 },
+		)
+		expect(rows[0]).toEqual(["Model", "DeepSeek V4.1 Flash"])
+		expect(rows[1]).toEqual(["Usage", "1.2K req · $8.40"])
+	})
+	test("omits spend when the harness priced it at zero (subscription)", () => {
+		const rows = modelRows(
+			{ key: "deepseekv41flash", name: "DeepSeek V4.1 Flash" },
+			{ requests: 3_110, cost: 0 },
+		)
+		expect(rows[1]).toEqual(["Usage", "3.1K req"])
+	})
 	test("missing meta yields no rows", () => {
 		expect(modelRows(undefined)).toEqual([])
 	})

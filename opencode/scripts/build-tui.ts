@@ -19,6 +19,7 @@ const out = await Bun.build({
 	naming: "tui.js",
 	plugins: [createSolidTransformPlugin({ resolvePath: () => null })],
 	external: [
+		"bun:sqlite", // Bun builtin: must resolve at runtime, not be bundled
 		"solid-js",
 		"solid-js/*",
 		"@opentui/*",

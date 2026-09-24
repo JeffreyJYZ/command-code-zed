@@ -168,8 +168,12 @@ nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
   controlling terminal → the `/dev/tty` open fails) and poll only while the
   session is on one of our models. cmduse 0.6.12 also stops the spinner unless
   it is driving the live dashboard on a tty. 0.2.7's app-slot `void` change was
-  a red herring — the claim already resolves to `null` safely. 0.2.4 is burned:
-  its tarball never landed, so it is deprecated and skipped.
+  a red herring — the claim already resolves to `null` safely. 0.2.9 adds the
+  active model's period usage to the panel (`src/sidebar/usageDb.ts`): a
+  read-only `bun:sqlite` scan of opencode's own store, since cmduse's account
+  API has no per-model dimension. Spend is shown only when the harness priced
+  it — CommandCode is subscription-billed, so opencode records cost 0 there.
+  0.2.4 is burned: its tarball never landed, so it is deprecated and skipped.
 - **npm publish is interactive: it fails from the agent shell** (`EOTP`, prints
   an auth URL). Build first (`cd opencode && bun run build`) so `dist/` is
   current, then the user runs plain `npm publish` themselves — it opens a

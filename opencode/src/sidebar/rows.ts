@@ -23,6 +23,12 @@ export interface WindowUsage {
 	resetAt?: number
 }
 
+/** One model's usage for the account's current billing period. */
+export interface ModelUsage {
+	requests: number
+	cost: number
+}
+
 export interface Usage {
 	plan?: string
 	monthlyCap?: number
@@ -105,10 +111,17 @@ export function usageRows(usage: Usage | undefined, now = Date.now()): SidebarRo
 	return rows
 }
 
-/** Active model's allowance, rates and benchmarks, from mpc's catalog. */
-export function modelRows(meta: ModelMeta | undefined): SidebarRow[] {
+/** Active model's allowance, rates and benchmarks, from mpc's catalog; its
+ * period usage (when the store has it) rides directly under the model name. */
+export function modelRows(meta: ModelMeta | undefined, usage?: ModelUsage): SidebarRow[] {
 	if (!meta) return []
 	const rows: SidebarRow[] = [["Model", meta.name]]
+	if (usage) {
+		// CommandCode is subscription-billed, so opencode records cost 0 for
+		// its models: show spend only when the harness actually priced it.
+		const spent = usage.cost > 0 ? ` · ${money(usage.cost)}` : ""
+		rows.push(["Usage", `${count(usage.requests)} req${spent}`])
+	}
 	if (meta.tier) rows.push(["Tier", TIER_DISPLAY[meta.tier]])
 	if (typeof meta.allowance === "number") rows.push(["Allowance", `${money(meta.allowance)}/mo`])
 	if (meta.rates) {

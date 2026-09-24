@@ -96,10 +96,14 @@ section (toggle with `ctrl+x b`):
 - this period's requests and spend
 - the active model: tier, monthly allowance, $/M rates (in/out, cache read), Intelligence, Tok/s
   (new in 0.2.5)
+- the active model's own period usage — requests, plus spend when the harness records it
+  (new in 0.2.9)
 
 Usage comes from the `cmduse` CLI (polled every 30s); the model catalog comes from `mpc --json`,
 cached for 6h — install it with `bun link` in the sibling `oc-cmd-compare` checkout, or the section
-simply omits those rows. Non-CommandCode models show nothing.
+simply omits those rows. The model's own usage is read from opencode's message store
+(`~/.local/share/opencode/opencode.db`, read-only); CommandCode is subscription-billed, so its
+rows show requests only. Non-CommandCode models show nothing.
 
 ## MCP server
 

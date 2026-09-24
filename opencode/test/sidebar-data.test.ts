@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test"
+import { Database } from "bun:sqlite"
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { SPAWN_OPTIONS, parseMpcJson, parseUsageJson } from "../src/sidebar/data"
+import { loadModelUsage, periodStart } from "../src/sidebar/usageDb"
 
 const USAGE = JSON.stringify({
 	error: null,
@@ -93,4 +98,48 @@ test("parseMpcJson keeps the mpc key and a local key for lookup", () => {
 // the opencode TUI prompt on every poll.
 test("spawns cmduse with no controlling terminal", () => {
 	expect(SPAWN_OPTIONS.detached).toBe(true)
+})
+
+/** Minimal stand-in for opencode's `message` store. */
+function fixtureDb(): string {
+	const path = join(mkdtempSync(join(tmpdir(), "cc-usage-")), "opencode.db")
+	const db = new Database(path)
+	db.run("CREATE TABLE message (data TEXT, time_created INTEGER)")
+	const row = (data: object, at: number) =>
+		db.run("INSERT INTO message VALUES (?, ?)", [JSON.stringify(data), at])
+	const model = "deepseek/deepseek-v4.1-flash"
+	const now = Date.now()
+	row({ role: "assistant", modelID: model, tokens: { input: 1 }, cost: 0.5 }, now - 1_000)
+	row({ role: "assistant", modelID: model, tokens: { input: 1 }, cost: 1.25 }, now - 2_000)
+	row({ role: "assistant", modelID: "other/model", tokens: { input: 1 }, cost: 9 }, now - 1_000)
+	row({ role: "user", modelID: model, tokens: { input: 1 }, cost: 3 }, now - 1_000)
+	row({ role: "assistant", modelID: model, tokens: { input: 1 }, cost: 5 }, now - 40 * 86_400_000)
+	db.close()
+	return path
+}
+
+describe("loadModelUsage", () => {
+	test("sums the window for one model only", () => {
+		const path = fixtureDb()
+		const week = Date.now() - 7 * 86_400_000
+		expect(loadModelUsage("deepseek/deepseek-v4.1-flash", week, path)).toEqual({
+			requests: 2,
+			cost: 1.75,
+		})
+		// the vendored id and the bare one share a canonical key
+		expect(loadModelUsage("deepseek-v4.1-flash", week, path)?.requests).toBe(2)
+	})
+	test("returns null without a store", () => {
+		expect(loadModelUsage("deepseek/deepseek-v4.1-flash", 0, "/nope/missing.db")).toBeNull()
+	})
+})
+
+describe("periodStart", () => {
+	const now = Date.UTC(2026, 8, 24)
+	test("takes the period end one calendar month back", () => {
+		expect(new Date(periodStart("2026-09-27", now)).toISOString().slice(0, 10)).toBe("2026-08-27")
+	})
+	test("falls back to 30 days", () => {
+		expect(periodStart(undefined, now)).toBe(now - 30 * 86_400_000)
+	})
 })

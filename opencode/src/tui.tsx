@@ -17,12 +17,14 @@ import { runCmduse } from "./cli"
 import { loadMeta, loadUsage } from "./sidebar/data"
 import {
 	type ModelMeta,
+	type ModelUsage,
 	type SidebarRow,
 	modelKey,
 	modelRows,
 	tierFor,
 	usageRows,
 } from "./sidebar/rows"
+import { loadModelUsage, periodStart } from "./sidebar/usageDb"
 
 // Plugin id is a stable contract (test/tui.test.ts pins it); the slot id is separate.
 const ID = "command-code.tui"
@@ -50,13 +52,20 @@ function Panel(props: { rows: () => SidebarRow[]; text: () => RGBA; muted: () =>
 function useRows(activeModelId: () => string | undefined, active: () => boolean) {
 	const [usage, setUsage] = createSignal<ReturnType<typeof usageRows>>([])
 	const [meta, setMeta] = createSignal<Map<string, ModelMeta>>(new Map())
+	const [modelUsage, setModelUsage] = createSignal<ModelUsage | undefined>()
 
 	void loadMeta()
 		.then(setMeta)
 		.catch(() => {})
 	const refresh = async () => {
 		try {
-			setUsage(usageRows(await loadUsage()))
+			const snapshot = await loadUsage()
+			setUsage(usageRows(snapshot))
+			// opencode's own store carries the per-model half cmduse lacks.
+			const id = activeModelId()
+			setModelUsage(
+				id ? (loadModelUsage(id, periodStart(snapshot.periodEnd)) ?? undefined) : undefined,
+			)
 		} catch {
 			// cmduse missing/offline: keep the last snapshot
 		}
@@ -78,7 +87,7 @@ function useRows(activeModelId: () => string | undefined, active: () => boolean)
 		// gating keys are model ids, not display names, so tier comes from the
 		// session's id rather than the catalog row.
 		const model = found ? { ...found, tier: found.tier ?? (id ? tierFor(id) : undefined) } : undefined
-		return [...usage(), ...modelRows(model)]
+		return [...usage(), ...modelRows(model, modelUsage())]
 	})
 }
 
