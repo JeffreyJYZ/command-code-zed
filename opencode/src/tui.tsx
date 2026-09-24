@@ -10,6 +10,7 @@
 // Data comes from two read-only spawns: cmduse for usage (polled) and mpc for
 // the per-model catalog (disk-cached; it scrapes docs).
 import type { RGBA } from "@opentui/core"
+import type { JSX } from "@opentui/solid"
 import { Plugin } from "@opencode/plugin/tui"
 import { For, Show, createMemo, createSignal, onCleanup } from "solid-js"
 import { runCmduse } from "./cli"
@@ -157,9 +158,11 @@ export const commandCodeTui = Plugin.define({
 		})
 		// /cmd-usage prints the full cmduse dashboard in a dialog. keymap.layer()
 		// must run inside a render, so mount a no-op and register from there.
+		// Return `void` like opencode's own /btw claim: a `null` render leaves an
+		// empty box that paints a stray line in the prompt area.
 		ctx.ui.slot({
 			append: "app",
-			render: () => {
+			render: (() => {
 				ctx.keymap.layer(() => ({
 					mode: "global",
 					priority: 10,
@@ -192,8 +195,7 @@ export const commandCodeTui = Plugin.define({
 					],
 					bindings: ["command-code.cmd-usage"],
 				}))
-				return null
-			},
+			}) as unknown as () => JSX.Element,
 		})
 	},
 })
