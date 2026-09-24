@@ -88,6 +88,10 @@ without a restart.
 
 ### Sidebar
 
+Vision models (Claude, Gemini, GPT, Qwen, the DeepSeek `-vision-` ones) accept image attachments;
+text-only models do not. The per-model list is generated from Command Code's own CLI table — the
+listing API publishes no capabilities.
+
 While a session uses a `command-code*` model, the session sidebar grows a **Command Code**
 section (toggle with `ctrl+x b`):
 

@@ -18,6 +18,7 @@
 import { Plugin } from "@opencode/plugin";
 import { runCmduse } from "./cli";
 import { KNOWN_MODELS } from "./gating";
+import { inputModalities } from "./modalities";
 import { resolveKey } from "./key";
 import { isClaude, loadModels, type CmdModel } from "./models";
 
@@ -60,7 +61,9 @@ export function toV2Model(m: CmdModel, lane: Lane): unknown {
 		modelID: m.id,
 		providerID: lane.id,
 		name: m.name,
-		capabilities: { tools: true, input: ["text"], output: ["text"] },
+		// Modalities come from the generated table (the API has no capabilities);
+		// unknown models fall back to text-only.
+		capabilities: { tools: true, input: [...inputModalities(m.id)], output: ["text"] },
 		variants: [],
 		time: { released: 0 },
 		cost: [],

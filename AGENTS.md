@@ -71,6 +71,12 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
   + `cliVersion`; cli and opencode warn when the snapshot is >30d old, and
   both warn when the API returns a plan id no `plans.json` rule matches
   (the dashboard would otherwise silently show "Free" with no cap).
+- **Per-model input modalities live in `opencode/src/modalities.ts`, generated.**
+  The listing API (`/provider/v1/models`) returns no capabilities, so the only
+  source is the official CLI's own model table (`inputModalities`). Regenerate
+  with `bun scripts/extract-modalities.ts` (in `opencode/`) after a Command Code
+  release; it fetches the published bundle and stamps the version. Models absent
+  from the table are text-only, which is the safe default — never assume vision.
 - **Behavior vectors live in `core/conformance.json`.** Rust (`core` test)
   asserts them all. Since plugin 0.2.0 the TS port (`opencode/test/
   conformance.test.ts`) covers only the still-ported model-gating layer
@@ -173,6 +179,9 @@ nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
   read-only `bun:sqlite` scan of opencode's own store, since cmduse's account
   API has no per-model dimension. Spend is shown only when the harness priced
   it — CommandCode is subscription-billed, so opencode records cost 0 there.
+  0.2.10 fixed every model advertising as text-only: capabilities now come from
+  the generated `modalities.ts` (0.2.9 and earlier hardcoded `attachment: false`
+  + `input.image: false`, so no image could be attached even to `*-vision-*`).
   0.2.4 is burned: its tarball never landed, so it is deprecated and skipped.
 - **npm publish is interactive: it fails from the agent shell** (`EOTP`, prints
   an auth URL). Build first (`cd opencode && bun run build`) so `dist/` is

@@ -9,6 +9,7 @@ import { tool } from "@opencode-ai/plugin";
 import { API_BASE, whoami } from "./api";
 import { runCmduse } from "./cli";
 import { resolveKey } from "./key";
+import { supportsImage } from "./modalities";
 import { loadModels } from "./models";
 import { commandCodeV2, PROVIDER_BASE } from "./v2";
 
@@ -67,7 +68,15 @@ function toModelDefs(
 				providerID,
 				api: { id: m.id, url: PROVIDER_BASE, npm },
 				name: m.name,
-				capabilities: { ...MODEL_CAPABILITIES, interleaved },
+				// The listing API has no capabilities, so vision comes from the
+				// generated modalities table; text-only is the fallback.
+				capabilities: {
+					...MODEL_CAPABILITIES,
+					interleaved,
+					...(supportsImage(m.id)
+						? { attachment: true, input: { ...MODEL_CAPABILITIES.input, image: true } }
+						: {}),
+				},
 				cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
 				limit: { context: m.contextLength || 128_000, output: 32_000 },
 				status: "active" as const,
