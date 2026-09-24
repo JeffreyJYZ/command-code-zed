@@ -159,7 +159,10 @@ nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
   entrypoint, `@opencode/plugin` + `@opencode-ai/plugin` deps, both external
   in the bun build; v1 floor is the 1.18.29 object entrypoint); 0.2.x also
   ships a TUI half (`./tui` export → `src/tui.ts`, `solid-js` devDep for the
-  test runner only — opencode resolves the TUI import at runtime).
+  test runner only — opencode resolves the TUI import at runtime). 0.2.5 adds
+  the session sidebar (`src/sidebar/*`, `src/tui.tsx`) which consumes
+  `mpc --json` for model allowance/rates/benchmarks. 0.2.4 is burned: its
+  tarball never landed, so it is deprecated and skipped.
 - **npm publish is interactive: it fails from the agent shell** (`EOTP`, prints
   an auth URL). Build first (`cd opencode && bun run build`) so `dist/` is
   current, then the user runs plain `npm publish` themselves — it opens a

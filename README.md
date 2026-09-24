@@ -95,6 +95,7 @@ section (toggle with `ctrl+x b`):
 - 5-hour and weekly windows: used / cap, percent, reset countdown
 - this period's requests and spend
 - the active model: tier, monthly allowance, $/M rates (in/out, cache read), Intelligence, Tok/s
+  (new in 0.2.5)
 
 Usage comes from the `cmduse` CLI (polled every 30s); the model catalog comes from `mpc --json`,
 cached for 6h — install it with `bun link` in the sibling `oc-cmd-compare` checkout, or the section
