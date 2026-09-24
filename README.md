@@ -57,6 +57,7 @@ Shared truth lives in `core/`: `plans.json` (plan table/caps), `gating.json`
 `core/build.rs` bakes plans/gating into Rust consts; the opencode plugin's
 model-gating layer imports `gating.json` and asserts the gating subset of the
 vectors (usage/window math is the Rust core's alone since plugin 0.2.0).
+0.2.4 adds the per-request usage log consumed by `mpc --usage`.
 
 ## opencode plugin
 
@@ -85,6 +86,20 @@ Auth, in host order: opencode's own connection — **`/connect` and pick
 `~/.commandcode/auth.json` from `cmd login`. With no credential at all the
 providers stay `activation: "auto"`, so a later `/connect` lights them up
 without a restart.
+
+### Usage log
+
+Since 0.2.4 every finished assistant message appends one JSON line to
+`$XDG_CACHE_HOME/mpc/usage.jsonl` (override with `MPC_USAGE_LOG`):
+
+```json
+{"ts":"…","provider":"command-code-anthropic","model":"claude-sonnet-5","input":1200,"cacheRead":50000,"cacheWrite":0,"output":300,"costUsd":0.0123}
+```
+
+That is the only complete per-model record — `cmduse` reports local CLI
+sessions and the account API exposes no per-model split. `mpc --usage` reads it
+to project your real mix onto both plans; writes are deduped per message and
+never fail a request.
 
 ## MCP server
 
