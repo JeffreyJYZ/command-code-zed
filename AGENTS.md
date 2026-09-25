@@ -89,6 +89,13 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
   built `dist/index.js` must import nothing but node builtins, which is what keeps
   a fresh opencode start from installing their ~270 MB graph (`@opencode/ai`,
   `effect`, `@opentelemetry`, `@aws-sdk`) before the provider appears.
+- **The live model list is cached to `$XDG_CACHE_HOME/command-code/models.json`.** A
+  warm start merges it during registration, so the picker is fresh at ~1ms and
+  the background refresh usually finds nothing to change. The refresh only calls
+  `provider.transform` when the id sets differ (`idsDiffer`) and is deferred 3s
+  past setup: a transform landing while the TUI paints makes the host re-publish
+  provider/model state, which reads as "the UI waited for the fetch". The listing
+  API itself takes ~2.5s; that is fine as long as it stays off the paint path.
 - **Startup timing goes to `$XDG_CACHE_HOME/command-code/startup.log`.** A
   plugin's `console.log` runs in opencode's server process and is NOT captured by
   its log file, so `src/startupLog.ts` appends one line per start:

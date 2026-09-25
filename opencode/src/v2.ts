@@ -20,6 +20,7 @@ import { runCmduse } from "./cli";
 import { KNOWN_MODELS } from "./gating";
 import { inputModalities, isReasoningModel, modelCost, reasoningVariants } from "./catalog";
 import { createCommandCode } from "./provider";
+import { idsDiffer, readModelsCache, writeModelsCache } from "./modelsCache";
 import { setupTimingLine, writeStartupLine } from "./startupLog";
 import { resolveKey } from "./key";
 import { isClaude, loadModels, type CmdModel } from "./models";
@@ -231,6 +232,21 @@ export const commandCodeV2: PluginNs.Plugin = {
 		}
 
 		const seed = staticSeedModels();
+		// Warm start: if the last live list is on disk, merge it now — during
+		// registration — so the picker shows fresh models at 1ms and the background
+		// refresh usually finds nothing to change (no second provider update while
+		// the TUI is painting).
+		const cached = await readModelsCache();
+		if (cached) {
+			seed["command-code-anthropic"] = mergeModels(
+				seed["command-code-anthropic"],
+				cached.claude.map((m) => toV2Model(m, LANES[0]!)),
+			);
+			seed["command-code-openai"] = mergeModels(
+				seed["command-code-openai"],
+				cached.open.map((m) => toV2Model(m, LANES[1]!)),
+			);
+		}
 		await ctx.provider.transform((editor: ProviderEditor) => {
 			for (const lane of LANES) {
 				// Missing providers seed from Provider.Info.empty(id), so `update`
@@ -321,6 +337,20 @@ export const commandCodeV2: PluginNs.Plugin = {
 		// /connect after load still fills the list.
 		const controller = new AbortController();
 		let refreshing = false;
+		// What the registry currently holds, so a refresh can tell a real change
+		// from a repeat of the same list (ids only — that is what a picker shows).
+		let appliedClaude = cached?.claude ?? [];
+		let appliedOpen = cached?.open ?? [];
+		const logTimings = (refreshMs: number, modelCount: number) =>
+			void writeStartupLine(
+				setupTimingLine({
+					key: keyMs,
+					register: registerMs,
+					connection: connectionMs,
+					refresh: refreshMs,
+					models: modelCount,
+				}),
+			);
 		const refresh = async () => {
 			if (refreshing || controller.signal.aborted) return;
 			refreshing = true;
@@ -330,6 +360,15 @@ export const commandCodeV2: PluginNs.Plugin = {
 				if (!key) return;
 				const split = await loadModels(key);
 				if (controller.signal.aborted) return;
+				void writeModelsCache({ fetchedAt: Date.now(), claude: split.claude, open: split.open });
+				const modelCount = split.claude.length + split.open.length;
+				// Only touch the registry when the ids actually change: every transform
+				// is a state edit the host re-applies and re-publishes, and one landing
+				// while the TUI paints read as "the UI waited for the fetch".
+				if (!idsDiffer(split.claude, appliedClaude) && !idsDiffer(split.open, appliedOpen)) {
+					logTimings(Date.now() - refreshStart, modelCount);
+					return;
+				}
 				await ctx.provider.transform((editor: ProviderEditor) => {
 					editor.models.set(
 						"command-code-anthropic",
@@ -340,29 +379,26 @@ export const commandCodeV2: PluginNs.Plugin = {
 						mergeModels(seed["command-code-openai"], split.open.map((m) => toV2Model(m, LANES[1]!))) as never,
 					);
 				});
+				appliedClaude = split.claude;
+				appliedOpen = split.open;
 				// console.log from the server process never reaches opencode's log
 				// file, so the timings go to our own cache file instead.
-				void writeStartupLine(
-					setupTimingLine({
-						key: keyMs,
-						register: registerMs,
-						connection: connectionMs,
-						refresh: Date.now() - refreshStart,
-						models: split.claude.length + split.open.length,
-					}),
-				);
+				logTimings(Date.now() - refreshStart, modelCount);
 			} catch (e) {
 				console.warn("[command-code] live model list unavailable, keeping the snapshot:", e);
 			} finally {
 				refreshing = false;
 			}
 		};
-		void refresh();
+		// Land the first refresh after the startup paint: a transform at +2.5s
+		// otherwise re-publishes provider/model state while the TUI is drawing.
+		const firstRefresh = setTimeout(() => void refresh(), 3_000);
 		// 30 min: comfortably past models.ts's 5-min cache, so every tick is a
 		// real fetch. Guarded against overlap by `refreshing`.
 		const timer = setInterval(() => void refresh(), 30 * 60 * 1000);
 		return () => {
 			controller.abort();
+			clearTimeout(firstRefresh);
 			clearInterval(timer);
 		};
 	},
