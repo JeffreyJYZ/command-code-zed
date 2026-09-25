@@ -51,8 +51,35 @@ function findCliMjs(): string {
 	throw new Error("cli.mjs not found — install Command Code CLI (npm i -g command-code)");
 }
 
-const cliPath = findCliMjs();
-const src = readFileSync(cliPath, "utf8");
+/**
+ * The CLI bundle to scrape: a locally installed `command-code` when present,
+ * else the published one (unpkg). The npm fallback matters on machines that
+ * only consume the plugin — the same pattern `opencode/scripts/extract-catalog.ts`
+ * uses — and keeps the snapshot regenerable without a global CLI install.
+ */
+async function loadCliMjs(): Promise<{ src: string; version: string }> {
+	try {
+		const local = findCliMjs();
+		// A local install wins, but it can be older than what npm serves (this
+		// machine had 1.38.2 while 1.65.0 was published). The version lands in
+		// gating.json as cliVersion, so a stale snapshot is visible.
+		console.log(`[extract-gating] using local ${local}`);
+		return { src: readFileSync(local, "utf8"), version: cliVersion(local) };
+	} catch {}
+	const meta = (await (await fetch("https://registry.npmjs.org/command-code/latest")).json()) as {
+		version?: string;
+	};
+	const version = meta.version;
+	if (!version) throw new Error("no command-code version at registry.npmjs.org");
+	console.log(`[extract-gating] no local CLI; fetching command-code@${version}`);
+	const src = await (await fetch(`https://unpkg.com/command-code@${version}/dist/cli.mjs`)).text();
+	if (!src.includes("inputModalities") && !src.includes("MODEL_CATEGORIES")) {
+		throw new Error("fetched bundle looks wrong — Command Code packaging changed");
+	}
+	return { src, version };
+}
+
+const { src, version: cliVersionUsed } = await loadCliMjs();
 
 function grab(start: string, end: string): string {
 	const i = src.indexOf(start);
@@ -152,7 +179,7 @@ const hardBlocked: Record<string, string[]> = {
 // extractedAt/cliVersion let consumers warn when the snapshot goes stale.
 const out = {
 	extractedAt: new Date().toISOString(),
-	cliVersion: cliVersion(cliPath),
+	cliVersion: cliVersionUsed,
 	categories,
 	plans,
 	knownModels: known,

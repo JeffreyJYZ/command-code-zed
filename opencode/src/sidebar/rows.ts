@@ -4,7 +4,7 @@
 // the same shape cmd-provider's deals panel uses. Keeping this pure makes the
 // panel trivial to test and host-agnostic (v1 and v2 pass the same inputs).
 import { MODEL_CATEGORIES, canonicalizeModelId, type Category } from "../gating"
-import { FIVE_HOUR_SECS, WEEKLY_SECS, elapsedPct } from "./windows"
+import { FIVE_HOUR_SECS, WEEKLY_SECS, elapsedLabel } from "./windows"
 
 export type SidebarRow = [label: string, value: string]
 
@@ -86,11 +86,11 @@ function windowRow(
 	if (!w || typeof w.cap !== "number" || w.cap <= 0) return undefined
 	const used = typeof w.used === "number" ? w.used : 0
 	const pct = Math.round((used / w.cap) * 100)
-	const elapsed = elapsedPct(w.resetAt, durSecs, Math.floor(now / 1000))
+	const elapsed = elapsedLabel(w.resetAt, durSecs, Math.floor(now / 1000))
 	const reset = until(w.resetAt, now)
 	const parts = [
 		`${money(used)} / ${money(w.cap)} (${pct}%)`,
-		...(elapsed === undefined ? [] : [`${elapsed}% elapsed`]),
+		...(elapsed === undefined ? [] : [`${elapsed} elapsed`]),
 		...(reset ? [`resets ${reset}`] : []),
 	]
 	return [label, parts.join(" · ")]

@@ -9,6 +9,7 @@ import {
 	until,
 	usageRows,
 } from "../src/sidebar/rows"
+import { elapsedLabel } from "../src/sidebar/windows"
 
 describe("formatting", () => {
 	test("money trims whole numbers but keeps cents", () => {
@@ -122,5 +123,22 @@ describe("modelKey", () => {
 		expect(modelKey("deepseek/deepseek-v4.1-flash")).toBe("deepseekv41flash")
 		expect(modelKey("DeepSeek V4 Flash (latest)")).toBe("deepseekv4flash")
 		expect(modelKey("zai-org/GLM-5.2-Fast")).toBe("glm52fast")
+	})
+})
+
+describe("elapsedLabel", () => {
+	const fiveHour = 5 * 3600
+	test("a window minutes into a long period reads <1%, not 0%", () => {
+		// 40 minutes into a 7-day window
+		const resetAt = 1_000_000 + 7 * 86_400 - 2400
+		expect(elapsedLabel(resetAt * 1000, 7 * 86_400, 1_000_000)).toBe("<1%")
+	})
+	test("exactly at the start stays 0%, and real percents round", () => {
+		const resetAt = 1_000_000 + fiveHour
+		expect(elapsedLabel(resetAt * 1000, fiveHour, 1_000_000)).toBe("0%")
+		expect(elapsedLabel(resetAt * 1000, fiveHour, 1_000_000 + 13 * 60)).toBe("4%")
+	})
+	test("no reset time means no label", () => {
+		expect(elapsedLabel(undefined, fiveHour, 1_000_000)).toBeUndefined()
 	})
 })

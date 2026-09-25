@@ -30,3 +30,19 @@ export function elapsedPct(
 	const pct = ((nowSecs - start) / durSecs) * 100
 	return Math.round(Math.min(100, Math.max(0, pct)))
 }
+
+/**
+ * `elapsedPct` as text: a seven-day window forty minutes in is 0.4%, and "0%"
+ * reads as "not started". Non-zero fractions below a percent render "<1%".
+ * Exact zero stays "0%".
+ */
+export function elapsedLabel(
+	resetAtMs: number | undefined,
+	durSecs: number,
+	nowSecs: number,
+): string | undefined {
+	const pct = elapsedPct(resetAtMs, durSecs, nowSecs)
+	if (pct === undefined) return undefined
+	if (pct === 0 && nowSecs > Math.floor((resetAtMs as number) / 1000) - durSecs) return "<1%"
+	return `${pct}%`
+}

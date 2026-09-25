@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { KNOWN_MODELS } from "../src/gating";
 import { isClaude } from "../src/models";
-import { credentialKey, INTEGRATION_ID, staticSeedModels, toV2Model, type Lane } from "../src/v2";
+import { credentialKey, INTEGRATION_ID, mergeModels, staticSeedModels, toV2Model, type Lane } from "../src/v2";
 
 const claudeLane: Lane = {
 	id: "command-code-anthropic",
@@ -95,3 +95,20 @@ describe("staticSeedModels", () => {
 		for (const m of [...claude, ...open]) expect((m.limit as { context: number }).context).toBe(128_000);
 	});
 });
+
+describe("mergeModels", () => {
+	const m = (id: string, extra: Record<string, unknown> = {}) => ({ id, ...extra })
+	test("keeps snapshot ids a gated live response omits", () => {
+		const merged = mergeModels([m("a"), m("b")], [m("a", { cost: 1 })])
+		expect(merged.map((x) => (x as { id: string }).id)).toEqual(["a", "b"])
+	})
+	test("live fields win for shared ids, snapshot order is preserved", () => {
+		const merged = mergeModels([m("a", { name: "old" }), m("b")], [m("a", { name: "new" })])
+		expect(merged[0]).toEqual({ id: "a", name: "new" })
+		expect((merged[1] as { id: string }).id).toBe("b")
+	})
+	test("live-only models append in live order", () => {
+		const merged = mergeModels([m("a")], [m("c"), m("b")])
+		expect(merged.map((x) => (x as { id: string }).id)).toEqual(["a", "c", "b"])
+	})
+})

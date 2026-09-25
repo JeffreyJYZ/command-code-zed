@@ -99,8 +99,7 @@ export function toV2Model(m: CmdModel, lane: Lane): unknown {
 }
 
 /** Instant static seed from gating.json's known model ids, split by wire lane.
- * Replaced by the gated live list once the background fetch lands; also the
- * fallback shown when the live fetch fails. */
+ * Shows in /model immediately; the live fetch merges over it later. */
 export function staticSeedModels(): Record<Lane["id"], unknown[]> {
 	const seed: Record<Lane["id"], unknown[]> = {
 		"command-code-anthropic": [],
@@ -113,6 +112,23 @@ export function staticSeedModels(): Record<Lane["id"], unknown[]> {
 		seed[lane.id] = models;
 	}
 	return seed;
+}
+
+/**
+ * Union by model id: the snapshot keeps every id it had, so a gated or partial
+ * live response can never make a model vanish from the picker, while live
+ * entries win field-by-field so context, rates, variants and modalities stay
+ * fresh. Snapshot order is preserved; live-only models append in live order.
+ */
+export function mergeModels(snapshot: readonly unknown[], live: readonly unknown[]): unknown[] {
+	const byId = new Map<string, unknown>()
+	const add = (model: unknown) => {
+		const id = (model as { id?: unknown })?.id
+		if (typeof id === "string") byId.set(id, model)
+	}
+	for (const model of snapshot) add(model)
+	for (const model of live) add(model)
+	return [...byId.values()]
 }
 
 /** The slice of the plugin context the credential resolver needs. */
@@ -157,28 +173,19 @@ export async function credentialKey(ctx: CredentialContext): Promise<string | un
 export const commandCodeV2: PluginNs.Plugin = {
 	id: PLUGIN_ID,
 	async setup(ctx) {
-		// Credential sources, in host order of authority:
-		//  1. the opencode connection for our integration (`/connect`, or the
-		//     env method reading CMD_API_KEY on the server process)
-		//  2. our own fallback: CMD_API_KEY here, then ~/.commandcode/auth.json
-		//     (`cmd login`) — resolves users who never /connect-ed.
-		// The host injects (1) into the provider runtime; (2) we inject as
-		// settings.apiKey. Neither → activation "auto": availability follows the
-		// integration connection, so a later /connect lights the provider up
-		// without a plugin reload.
+		const t0 = Date.now();
+		// 1. Registration first. Nothing here may wait on the network or the
+		//    credential store: /model lists a provider as soon as its models
+		//    exist, and the seed gives them instantly. `resolveKey` is a local
+		//    env/file read; the integration connection lookup below can take
+		//    seconds and only *upgrades* what the seed already provides.
 		let localKey: string | undefined;
+		let keyMs = 0;
 		try {
+			const keyStart = Date.now();
 			localKey = await resolveKey();
+			keyMs = Date.now() - keyStart;
 		} catch {}
-		let hasConnection = false;
-		try {
-			hasConnection = (await ctx.integration.connection.active(INTEGRATION_ID)) !== undefined;
-		} catch {}
-		if (!localKey && !hasConnection) {
-			console.warn(
-				`[command-code] no API key found. Run /connect and choose "${INTEGRATION_NAME}", or \`cmd login\` (~/.commandcode/auth.json), or set CMD_API_KEY.`,
-			);
-		}
 
 		// /connect entry + env discovery for both lanes. Methods are additive
 		// registrations on the shared integration id; the missing-record seed
@@ -233,11 +240,11 @@ export const commandCodeV2: PluginNs.Plugin = {
 					// plain strings.
 					if (provider.name === (provider.id as unknown as string)) provider.name = lane.name;
 					if (provider.package === "") provider.package = lane.pkg;
-					// Availability follows the connection when there is one; with only
-					// a local key we mark the provider enabled ourselves.
-					provider.activation = hasConnection || localKey ? "enabled" : "auto";
+					// A local key is enough to enable now; an integration connection
+					// (looked up below) upgrades the same field when it lands.
+					provider.activation = localKey ? "enabled" : "auto";
 					provider.settings = { ...provider.settings, baseURL: PROVIDER_BASE };
-					if (!hasConnection && localKey && provider.settings.apiKey === undefined) {
+					if (localKey && provider.settings.apiKey === undefined) {
 						provider.settings.apiKey = localKey;
 					}
 					provider.integrationID ??= INTEGRATION_ID as never;
@@ -245,6 +252,7 @@ export const commandCodeV2: PluginNs.Plugin = {
 				editor.models.set(lane.id, seed[lane.id] as never);
 			}
 		});
+		const registerMs = Date.now() - t0;
 
 		// v2 tool: same cmd_usage the v1 half registers. The Promise API takes
 		// JSON Schema input and returns `{ content }`, so the agent keeps the
@@ -279,18 +287,43 @@ export const commandCodeV2: PluginNs.Plugin = {
 			} as never);
 		});
 
-		// Live model list: fetch + plan gating + lane split (same pipeline as
-		// v1's provider.models hook), replace the static seed, then re-fetch on
-		// an interval so models Command Code adds later show up without a
-		// service restart (the competitor bakes its list at publish time).
-		// The transform call itself marks the registry changed — no explicit
-		// reload() needed. Resolves credentials per attempt, so a /connect
-		// after load still fills the list.
+		// 2. Credentials. The connection lookup can take seconds (keyring, token
+		//    refresh) and only upgrades what registration already provided:
+		//    availability, and the key the lanes share.
+		let hasConnection = false;
+		let connectionMs = 0;
+		try {
+			const connectionStart = Date.now();
+			hasConnection = (await ctx.integration.connection.active(INTEGRATION_ID)) !== undefined;
+			connectionMs = Date.now() - connectionStart;
+		} catch {}
+		if (hasConnection) {
+			await ctx.provider.transform((editor: ProviderEditor) => {
+				for (const lane of LANES) {
+					editor.update(lane.id, (provider) => {
+						provider.activation = "enabled";
+					});
+				}
+			});
+		}
+		if (!localKey && !hasConnection) {
+			console.warn(
+				`[command-code] no API key found. Run /connect and choose "${INTEGRATION_NAME}", or \`cmd login\` (~/.commandcode/auth.json), or set CMD_API_KEY.`,
+			);
+		}
+
+		// 3. Live model list: fetch + plan gating + lane split (same pipeline as
+		// v1's provider.models hook), merged over the snapshot, then re-fetched on
+		// an interval so models Command Code adds later show up without a service
+		// restart. Merge, not replace: a gated or partial response must never make
+		// a model vanish from the picker. Resolves credentials per attempt, so a
+		// /connect after load still fills the list.
 		const controller = new AbortController();
 		let refreshing = false;
 		const refresh = async () => {
 			if (refreshing || controller.signal.aborted) return;
 			refreshing = true;
+			const refreshStart = Date.now();
 			try {
 				const key = await credentialKey(ctx);
 				if (!key) return;
@@ -299,15 +332,18 @@ export const commandCodeV2: PluginNs.Plugin = {
 				await ctx.provider.transform((editor: ProviderEditor) => {
 					editor.models.set(
 						"command-code-anthropic",
-						split.claude.map((m) => toV2Model(m, LANES[0]!)) as never,
+						mergeModels(seed["command-code-anthropic"], split.claude.map((m) => toV2Model(m, LANES[0]!))) as never,
 					);
 					editor.models.set(
 						"command-code-openai",
-						split.open.map((m) => toV2Model(m, LANES[1]!)) as never,
+						mergeModels(seed["command-code-openai"], split.open.map((m) => toV2Model(m, LANES[1]!))) as never,
 					);
 				});
+				console.log(
+					`[command-code] setup: key=${keyMs}ms register=${registerMs}ms connection=${connectionMs}ms refresh=${Date.now() - refreshStart}ms models=${split.claude.length + split.open.length}`,
+				);
 			} catch (e) {
-				console.warn("[command-code] live model list unavailable, keeping previous list:", e);
+				console.warn("[command-code] live model list unavailable, keeping the snapshot:", e);
 			} finally {
 				refreshing = false;
 			}

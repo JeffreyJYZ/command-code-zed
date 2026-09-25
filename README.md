@@ -112,6 +112,15 @@ rows show requests only. Non-CommandCode models show nothing.
 opencode is told each model's published $/1M rates, so its own cost display (and any accounting
 built on it) works for CommandCode models instead of showing $0.
 
+For the fastest startup, pin the plugin to an exact version in `opencode.json`:
+
+```json
+{ "plugins": ["@jeffreyjyz/opencode-command-code@0.3.1"] }
+```
+
+A bare name makes opencode re-resolve `@latest` (a registry round-trip) on every start; a pinned
+specifier is cached as-is, and the plugin's own provider is versioned with it.
+
 ## MCP server
 
 `cmduse mcp` runs an MCP stdio server (hand-rolled JSON-RPC, no extra deps)

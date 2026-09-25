@@ -208,7 +208,20 @@ nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
   loader imports the module and takes the first `create*` export —
   `createCommandCode`). Not yet ported from the reference implementation: retry
   ladders, `pause_turn` continuation, and the legacy `/alpha/generate` fallback
-  Go accounts need when the provider API plan-gates them. 0.2.4 is burned: its
+  Go accounts need when the provider API plan-gates them. 0.3.1 made the
+  provider appear in /model as fast as the seed allows: `setup()` registers the
+  provider + snapshot + aisdk hooks before it touches credentials (the
+  integration connection lookup can take seconds and only upgrades
+  `activation`/`apiKey` afterwards), the live list **merges** over the snapshot
+  (`mergeModels`: add + update, never remove, so a gated or partial response
+  cannot make a model vanish), and one always-on line reports where a slow start
+  went: `[command-code] setup: key=…ms register=…ms connection=…ms refresh=…ms
+  models=…`. Also: `<1%` instead of `0%` for windows just started, an unpkg
+  fallback in `scripts/extract-gating.ts` (a local CLI still wins — this machine
+  has 1.38.2 installed while 1.65.0 is published, so a real refresh must use the
+  published bundle or a newer CLI), and a README tip to pin the plugin specifier
+  so opencode stops re-resolving `@latest` on every start.
+  0.2.4 is burned: its
   tarball never landed, so it is deprecated and skipped.
 - **npm publish is interactive: it fails from the agent shell** (`EOTP`, prints
   an auth URL). Build first (`cd opencode && bun run build`) so `dist/` is
