@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { KNOWN_MODELS } from "../src/gating";
 import { isClaude } from "../src/models";
 import { credentialKey, INTEGRATION_ID, mergeModels, staticSeedModels, toV2Model, type Lane } from "../src/v2";
+import { setupTimingLine, startupLogPath, writeStartupLine } from "../src/startupLog";
 
 const claudeLane: Lane = {
 	id: "command-code-anthropic",
@@ -110,5 +114,20 @@ describe("mergeModels", () => {
 	test("live-only models append in live order", () => {
 		const merged = mergeModels([m("a")], [m("c"), m("b")])
 		expect(merged.map((x) => (x as { id: string }).id)).toEqual(["a", "c", "b"])
+	})
+})
+
+describe("setup timing line", () => {
+	test("formats every phase and is stable for tooling", () => {
+		expect(setupTimingLine({ key: 3, register: 11, connection: 612, refresh: 2410, models: 61 })).toBe(
+			"setup: key=3ms register=11ms connection=612ms refresh=2410ms models=61",
+		)
+	})
+	test("writes to the cache file without throwing", async () => {
+		process.env.XDG_CACHE_HOME = mkdtempSync(join(tmpdir(), "cc-startup-"))
+		await writeStartupLine(setupTimingLine({ key: 1, register: 2, connection: 3, refresh: 4, models: 5 }))
+		const text = readFileSync(startupLogPath(), "utf8")
+		expect(text).toContain("setup: key=1ms register=2ms connection=3ms refresh=4ms models=5")
+		delete process.env.XDG_CACHE_HOME
 	})
 })

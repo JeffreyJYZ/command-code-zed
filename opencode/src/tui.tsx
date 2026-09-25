@@ -24,6 +24,7 @@ import {
 	tierFor,
 	usageRows,
 } from "./sidebar/rows"
+import { minPlan } from "./catalog"
 import { loadModelUsage, periodStart } from "./sidebar/usageDb"
 
 // Plugin id is a stable contract (test/tui.test.ts pins it); the slot id is separate.
@@ -86,7 +87,13 @@ function useRows(activeModelId: () => string | undefined, active: () => boolean)
 		const found = id ? (meta().get(modelKey(id)) ?? meta().get(id)) : undefined
 		// gating keys are model ids, not display names, so tier comes from the
 		// session's id rather than the catalog row.
-		const model = found ? { ...found, tier: found.tier ?? (id ? tierFor(id) : undefined) } : undefined
+		const model = found
+			? {
+					...found,
+					tier: found.tier ?? (id ? tierFor(id) : undefined),
+					minPlan: id ? minPlan(id) : undefined,
+				}
+			: undefined
 		return [...usage(), ...modelRows(model, modelUsage())]
 	})
 }

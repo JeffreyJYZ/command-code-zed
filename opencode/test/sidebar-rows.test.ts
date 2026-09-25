@@ -142,3 +142,14 @@ describe("elapsedLabel", () => {
 		expect(elapsedLabel(undefined, fiveHour, 1_000_000)).toBeUndefined()
 	})
 })
+
+describe("min plan row", () => {
+	test("shows the cheapest plan that serves the model", () => {
+		const rows = modelRows({ key: "k", name: "DeepSeek V4.1 Flash", minPlan: "Go" })
+		expect(rows[1]).toEqual(["Min plan", "Go"])
+	})
+	test("omits the row when the catalog has no answer", () => {
+		const rows = modelRows({ key: "k", name: "x", minPlan: null })
+		expect(rows.some(([label]) => label === "Min plan")).toBe(false)
+	})
+})

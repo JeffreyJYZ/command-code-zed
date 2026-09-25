@@ -89,6 +89,18 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
   built `dist/index.js` must import nothing but node builtins, which is what keeps
   a fresh opencode start from installing their ~270 MB graph (`@opencode/ai`,
   `effect`, `@opentelemetry`, `@aws-sdk`) before the provider appears.
+- **Startup timing goes to `$XDG_CACHE_HOME/command-code/startup.log`.** A
+  plugin's `console.log` runs in opencode's server process and is NOT captured by
+  its log file, so `src/startupLog.ts` appends one line per start:
+  `setup: key=…ms register=…ms connection=…ms refresh=…ms models=…`. `register`
+  is the phase that gates the picker; if it grows, look at plugin load, not setup.
+- **`core/gating.json`'s category scrape is still on the 1.38.2 anchors.** The
+  1.65 bundle moved the `Vr`/`zr`/`Kr` declarations, so `scripts/extract-gating.ts`
+  now prefers the published bundle (unpkg, then jsdelivr — unpkg 500s on some
+  versions; a local install is the offline fallback) and fails loud on the old
+  anchors. Re-anchoring is its own task; until then plan gating falls back to
+  "allow" for the newest models (the API still enforces) and the tier row simply
+  omits those models — prefer `Min plan` when both are available.
 - **Behavior vectors live in `core/conformance.json`.** Rust (`core` test)
   asserts them all. Since plugin 0.2.0 the TS port (`opencode/test/
   conformance.test.ts`) covers only the still-ported model-gating layer

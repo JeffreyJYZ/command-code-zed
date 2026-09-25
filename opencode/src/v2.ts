@@ -20,6 +20,7 @@ import { runCmduse } from "./cli";
 import { KNOWN_MODELS } from "./gating";
 import { inputModalities, isReasoningModel, modelCost, reasoningVariants } from "./catalog";
 import { createCommandCode } from "./provider";
+import { setupTimingLine, writeStartupLine } from "./startupLog";
 import { resolveKey } from "./key";
 import { isClaude, loadModels, type CmdModel } from "./models";
 
@@ -339,8 +340,16 @@ export const commandCodeV2: PluginNs.Plugin = {
 						mergeModels(seed["command-code-openai"], split.open.map((m) => toV2Model(m, LANES[1]!))) as never,
 					);
 				});
-				console.log(
-					`[command-code] setup: key=${keyMs}ms register=${registerMs}ms connection=${connectionMs}ms refresh=${Date.now() - refreshStart}ms models=${split.claude.length + split.open.length}`,
+				// console.log from the server process never reaches opencode's log
+				// file, so the timings go to our own cache file instead.
+				void writeStartupLine(
+					setupTimingLine({
+						key: keyMs,
+						register: registerMs,
+						connection: connectionMs,
+						refresh: Date.now() - refreshStart,
+						models: split.claude.length + split.open.length,
+					}),
 				);
 			} catch (e) {
 				console.warn("[command-code] live model list unavailable, keeping the snapshot:", e);

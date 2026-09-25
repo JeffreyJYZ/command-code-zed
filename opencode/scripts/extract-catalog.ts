@@ -12,9 +12,28 @@
 import { writeFile } from "node:fs/promises"
 
 const REGISTRY = "https://registry.npmjs.org/command-code/latest"
-const BUNDLE = (version: string) => `https://unpkg.com/command-code@${version}/dist/cli.mjs`
-const MODELS_MD = (version: string) =>
-	`https://unpkg.com/command-code@${version}/dist/bundled/command-code-knowledge/reference/models.md`
+/**
+ * CDNs in preference order. unpkg 500s on some versions (1.65.2 did while
+ * jsdelivr served the same file), so one is not enough to keep the snapshot
+ * refreshable unattended.
+ */
+const CDNS = ["https://unpkg.com", "https://cdn.jsdelivr.net/npm"]
+const BUNDLE = (cdn: string, version: string) => `${cdn}/command-code@${version}/dist/cli.mjs`
+const MODELS_MD = (cdn: string, version: string) =>
+	`${cdn}/command-code@${version}/dist/bundled/command-code-knowledge/reference/models.md`
+
+/** First CDN that serves a non-empty body, with the URL that worked. */
+async function fetchFirst(pathFor: (cdn: string, version: string) => string, version: string, label: string): Promise<[string, string]> {
+	let last = ""
+	for (const cdn of CDNS) {
+		const url = pathFor(cdn, version)
+		const response = await fetch(url).catch((error) => ({ ok: false, status: 0, text: async () => String(error) }))
+		const body = response.ok ? await response.text() : ""
+		if (body.length > 0) return [body, url]
+		last = `${new URL(url).host} -> ${response.status}`
+	}
+	throw new Error(`no CDN served ${label} (last: ${last})`)
+}
 const OUT = new URL("../src/catalog.ts", import.meta.url).pathname
 
 export type InputModality = "text" | "image" | "audio" | "video" | "pdf"
@@ -26,12 +45,25 @@ export interface CatalogEntry {
 	efforts: string[] | null
 	cost: { input: number; output: number; cacheRead: number; cacheWrite: number }
 	modalities: InputModality[]
+	/** Cheapest plan that serves the model ("Go" | "GOAT" | "Pro" | "Max"), or
+	 * null when the docs do not say. `plans.md` names this column the access
+	 * rule, so it is the stable gating source. */
+	minPlan: string | null
+}
+
+/** `Go and above` → `Go`; `—`/blank → null. */
+export function normalizeMinPlan(raw: string | undefined): string | null {
+	const value = (raw ?? "").replace(/\s+and above\s*$/i, "").trim()
+	if (!value || value === "—" || value === "-") return null
+	return value
 }
 
 /**
  * Pull `{ id: "...", inputModalities: ["text","image"] }` records out of the
  * minified bundle. `[^{}]*?` keeps the match inside one object literal, so an
  * unrelated `id` earlier in the file cannot pair with a later modalities list.
+ * ≤1.65.0 shipped these inline; newer bundles dropped them for a denylist
+ * (see `parseTextOnly`), and this returns {} there.
  */
 export function parseModalities(bundle: string): Record<string, InputModality[]> {
 	const out: Record<string, InputModality[]> = {}
@@ -45,6 +77,30 @@ export function parseModalities(bundle: string): Record<string, InputModality[]>
 		if (modalities.length) out[id] = modalities
 	}
 	return out
+}
+
+/**
+ * Text-only model ids. 1.65+ inverted the modality default: a model accepts
+ * images unless it is in this set (`supportsVision` = `inputModalities?.includes
+ * ("image") ?? !isKnownTextOnlyModel`), so the list is the only stable anchor
+ * left. Canonicalised in the bundle; compared case-insensitively here.
+ */
+export function parseTextOnly(bundle: string): string[] {
+	const match = bundle.match(/Rr=new Set\(\[([^\]]*)\]/)
+	if (!match) return []
+	return [...(match[1] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1] as string).filter(Boolean)
+}
+
+/** Explicit record wins; otherwise the CLI's own default (vision unless denied).
+ * `textOnly` must hold lowercased ids — `mergeCatalog` builds it that way. */
+export function modalitiesFor(
+	id: string,
+	explicit: Record<string, InputModality[]>,
+	textOnly: ReadonlySet<string>,
+): InputModality[] {
+	const known = explicit[id]
+	if (known) return known
+	return textOnly.has(id.toLowerCase()) ? ["text"] : ["text", "image"]
 }
 
 /** `\`id\` | Name | Context | Efforts | $/1M in/out · cache read | ...` — parsed
@@ -88,6 +144,7 @@ export function parseModelsMd(md: string): Record<string, Omit<CatalogEntry, "mo
 				cacheRead: Number(cacheRead),
 				cacheWrite: cacheWrite === undefined ? 0 : Number(cacheWrite),
 			},
+			minPlan: normalizeMinPlan(cells[6]),
 		}
 	}
 	return out
@@ -96,10 +153,12 @@ export function parseModelsMd(md: string): Record<string, Omit<CatalogEntry, "mo
 export function mergeCatalog(
 	pricing: Record<string, Omit<CatalogEntry, "modalities">>,
 	modalities: Record<string, InputModality[]>,
+	textOnly: readonly string[] = [],
 ): Record<string, CatalogEntry> {
+	const denied = new Set(textOnly.map((id) => id.toLowerCase()))
 	const out: Record<string, CatalogEntry> = {}
 	for (const [id, entry] of Object.entries(pricing)) {
-		out[id] = { ...entry, modalities: modalities[id] ?? ["text"] }
+		out[id] = { ...entry, modalities: modalitiesFor(id, modalities, denied) }
 	}
 	return out
 }
@@ -112,7 +171,8 @@ function render(version: string, models: Record<string, CatalogEntry>): string {
 				`\t${JSON.stringify(id)}: { name: ${JSON.stringify(e.name)}, context: ${e.context}, ` +
 				`efforts: ${e.efforts === null ? "null" : JSON.stringify(e.efforts)}, ` +
 				`cost: { input: ${e.cost.input}, output: ${e.cost.output}, cacheRead: ${e.cost.cacheRead}, cacheWrite: ${e.cost.cacheWrite} }, ` +
-				`modalities: [${e.modalities.map((m) => `"${m}"`).join(", ")}] },`,
+				`modalities: [${e.modalities.map((m) => `"${m}"`).join(", ")}], ` +
+				`minPlan: ${e.minPlan === null ? "null" : JSON.stringify(e.minPlan)} },`,
 		)
 		.join("\n")
 	return `// GENERATED by scripts/extract-catalog.ts — do not edit by hand.
@@ -140,6 +200,8 @@ export interface CatalogEntry {
 	efforts: readonly string[] | null
 	cost: ModelCost
 	modalities: readonly InputModality[]
+	/** Cheapest plan that serves the model; plans.md names this the access rule. */
+	minPlan: string | null
 }
 
 export const CATALOG_VERSION = ${JSON.stringify(version)} as const
@@ -162,6 +224,10 @@ export function supportsImage(id: string): boolean {
 
 export function modelCost(id: string): ModelCost | undefined {
 	return MODEL_CATALOG[id]?.cost
+}
+
+export function minPlan(id: string): string | null {
+	return MODEL_CATALOG[id]?.minPlan ?? null
 }
 
 /** Reasoning-capable when it advertises explicit effort levels. */
@@ -191,16 +257,13 @@ if (import.meta.main) {
 	const bundleArg = args[args.indexOf("--cli-bundle") + 1]
 	const version = await fetchVersion()
 	const [md, bundle] = await Promise.all([
-		mdArg
-			? await Bun.file(mdArg).text()
-			: await (await fetch(MODELS_MD(version))).text(),
-		bundleArg
-			? await Bun.file(bundleArg).text()
-			: await (await fetch(BUNDLE(version))).text(),
+		mdArg ? await Bun.file(mdArg).text() : (await fetchFirst(MODELS_MD, version, "models.md"))[0],
+		bundleArg ? await Bun.file(bundleArg).text() : (await fetchFirst(BUNDLE, version, "cli.mjs"))[0],
 	])
 	const pricing = parseModelsMd(md)
 	const modalities = parseModalities(bundle)
-	const catalog = mergeCatalog(pricing, modalities)
+	const textOnly = parseTextOnly(bundle)
+	const catalog = mergeCatalog(pricing, modalities, textOnly)
 	const ids = Object.keys(catalog)
 	if (ids.length === 0) throw new Error("parsed no models — upstream docs shape changed")
 	// The docs page can lag a CLI release; modalities-only ids (new models) get

@@ -52,31 +52,51 @@ function findCliMjs(): string {
 }
 
 /**
- * The CLI bundle to scrape: a locally installed `command-code` when present,
- * else the published one (unpkg). The npm fallback matters on machines that
- * only consume the plugin — the same pattern `opencode/scripts/extract-catalog.ts`
- * uses — and keeps the snapshot regenerable without a global CLI install.
+ * The CLI bundle to scrape. Published wins over a local install: a machine can
+ * easily have an old global CLI (this one had 1.38.2 while 1.65.0 was
+ * published), and the snapshot is consumed by both the plugin and cmduse-core,
+ * so it must reflect the newest catalog Command Code ships. A local install is
+ * the fallback for offline regeneration.
  */
 async function loadCliMjs(): Promise<{ src: string; version: string }> {
 	try {
-		const local = findCliMjs();
-		// A local install wins, but it can be older than what npm serves (this
-		// machine had 1.38.2 while 1.65.0 was published). The version lands in
-		// gating.json as cliVersion, so a stale snapshot is visible.
-		console.log(`[extract-gating] using local ${local}`);
-		return { src: readFileSync(local, "utf8"), version: cliVersion(local) };
-	} catch {}
+		return await fetchPublished();
+	} catch (error) {
+		console.warn(`[extract-gating] published bundle unavailable (${(error as Error).message}); falling back to a local install`);
+	}
+	const local = findCliMjs();
+	console.log(`[extract-gating] using local ${local}`);
+	return { src: readFileSync(local, "utf8"), version: cliVersion(local) };
+}
+
+/**
+ * CDNs in preference order. unpkg 500s on some versions (1.65.2 did, while
+ * jsdelivr served the same file), so one is not enough to keep the snapshot
+ * refreshing unattended.
+ */
+const CDNS = [
+	(version: string) => `https://unpkg.com/command-code@${version}/dist/cli.mjs`,
+	(version: string) => `https://cdn.jsdelivr.net/npm/command-code@${version}/dist/cli.mjs`,
+];
+
+async function fetchPublished(): Promise<{ src: string; version: string }> {
 	const meta = (await (await fetch("https://registry.npmjs.org/command-code/latest")).json()) as {
 		version?: string;
 	};
 	const version = meta.version;
 	if (!version) throw new Error("no command-code version at registry.npmjs.org");
-	console.log(`[extract-gating] no local CLI; fetching command-code@${version}`);
-	const src = await (await fetch(`https://unpkg.com/command-code@${version}/dist/cli.mjs`)).text();
-	if (!src.includes("inputModalities") && !src.includes("MODEL_CATEGORIES")) {
-		throw new Error("fetched bundle looks wrong — Command Code packaging changed");
+	let last = ""
+	for (const cdn of CDNS) {
+		const url = cdn(version);
+		const response = await fetch(url).catch((error) => ({ ok: false, status: 0, detail: String(error) }));
+		const src = response.ok ? await response.text() : "";
+		if (src.includes("inputModalities") || src.includes("MODEL_CATEGORIES")) {
+			console.log(`[extract-gating] fetched published command-code@${version} from ${new URL(url).host}`);
+			return { src, version };
+		}
+		last = `${new URL(url).host} -> ${response.status}`;
 	}
-	return { src, version };
+	throw new Error(`no CDN served command-code@${version} (${last})`);
 }
 
 const { src, version: cliVersionUsed } = await loadCliMjs();

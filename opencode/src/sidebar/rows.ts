@@ -12,6 +12,8 @@ export interface ModelMeta {
 	key: string
 	name: string
 	tier?: Category
+	/** Cheapest plan that serves the model, from the generated catalog. */
+	minPlan?: string | null
 	allowance?: number
 	rates?: { input: number; output: number; cacheRead: number; cacheWrite?: number | null }
 	intelligence?: number
@@ -135,6 +137,9 @@ export function modelRows(meta: ModelMeta | undefined, usage?: ModelUsage): Side
 		rows.push(["Usage (this model)", `${count(usage.requests)} req${spent}`])
 	}
 	if (meta.tier) rows.push(["Tier", TIER_DISPLAY[meta.tier]])
+	// plans.md names models.md's Min plan column the access rule, and it covers
+	// models the (older) gating snapshot has no tier for.
+	if (meta.minPlan) rows.push(["Min plan", meta.minPlan])
 	if (typeof meta.allowance === "number") rows.push(["Allowance", `${money(meta.allowance)}/mo`])
 	if (meta.rates) {
 		rows.push(["Rates", `${rate(meta.rates.input)}/${rate(meta.rates.output)} in/out`])

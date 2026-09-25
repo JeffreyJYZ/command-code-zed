@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { mergeCatalog, parseModelsMd, parseModalities } from "../scripts/extract-catalog"
-import { CATALOG_VERSION, inputModalities, isReasoningModel, modelCost, supportsImage } from "../src/catalog"
+import { mergeCatalog, modalitiesFor, parseModelsMd, parseModalities, parseTextOnly } from "../scripts/extract-catalog"
+import { CATALOG_VERSION, inputModalities, isReasoningModel, minPlan, modelCost, supportsImage } from "../src/catalog"
 import { toV2Model } from "../src/v2"
 
 // A docs-table slice: one priced vision row, one priced text row, one row
@@ -27,10 +27,14 @@ describe("parseModelsMd", () => {
 			context: 1_000_000,
 			efforts: ["low", "max"],
 			cost: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+			minPlan: "Pro",
 		})
 		expect(rows["deepseek/x"]?.cost).toEqual({ input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 })
+		expect(minPlan("definitely/not-a-model")).toBeNull()
 		expect(rows["z/z"]?.efforts).toBeNull()
 		expect(rows["z/z"]?.context).toBe(1_050_000)
+		expect(rows["deepseek/x"]?.minPlan).toBe("Go")
+		expect(rows["z/z"]?.minPlan).toBe("Go")
 		expect(rows["bad"]).toBeUndefined()
 	})
 })
@@ -41,6 +45,21 @@ describe("parseModalities", () => {
 			"claude-sonnet-5": ["text", "image"],
 			"deepseek/x": ["text"],
 		})
+	})
+})
+
+describe("text-only denylist (1.65+ modality default)", () => {
+	const withDenylist = 'Rr=new Set(["zai-org/GLM-5.3","MiniMaxAI/MiniMax-M2.7"])'
+	test("parses the denied ids", () => {
+		expect(parseTextOnly(withDenylist)).toEqual(["zai-org/GLM-5.3", "MiniMaxAI/MiniMax-M2.7"])
+	})
+	test("denied ids are text-only, everything else accepts images", () => {
+		const denied = new Set(parseTextOnly(withDenylist).map((id) => id.toLowerCase()))
+		expect(modalitiesFor("zai-org/GLM-5.3", {}, denied)).toEqual(["text"])
+		expect(modalitiesFor("claude-sonnet-5", {}, denied)).toEqual(["text", "image"])
+	})
+	test("an explicit record still wins", () => {
+		expect(modalitiesFor("claude-sonnet-5", { "claude-sonnet-5": ["text"] }, new Set())).toEqual(["text"])
 	})
 })
 
