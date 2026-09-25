@@ -215,6 +215,17 @@ nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
   current, then the user runs plain `npm publish` themselves — it opens a
   browser to authenticate, no `--otp` needed. Never treat an `EOTP` failure as
   published — verify with `npm view @jeffreyjyz/opencode-command-code version`.
+- **A successful publish is asynchronous, in two visible stages.** The CLI
+  returns `PUT 202` ("Your package is being processed") and exit 0 immediately,
+  but the registry updates the **packument** (so `dist-tags.latest` and
+  `versions[<v>]` appear) about a minute later, and serves the **tarball** at
+  `…/-/opencode-command-code-<v>.tgz` several minutes after that — measured on
+  this package: 0.2.7 ~4.5 min, 0.2.8 ~4.5 min, 0.2.11 ~5 min, 0.3.0 ~5 min.
+  During the gap, `latest` already points at the new version while its tarball
+  still 404s, so a consumer that resolves `@latest` in that window installs
+  nothing (this is what burned 0.2.4). Verify in this order: packument shows the
+  version → poll the tarball URL until 200 → compare
+  `shasum -a 1` against a local `npm pack` → only then restart opencode.
 - After publishing a plugin version, opencode may keep resolving the previous
   one: its per-package install cache (`~/.cache/opencode/npm/<pkg>@latest/`) is
   built from a **cached npm packument**, which can lag the registry for
