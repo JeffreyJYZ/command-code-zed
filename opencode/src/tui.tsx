@@ -11,7 +11,7 @@
 // the per-model catalog (disk-cached; it scrapes docs).
 import type { RGBA } from "@opentui/core"
 import type { JSX } from "@opentui/solid"
-import type { Plugin } from "@opencode/plugin/tui"
+import type { Plugin as TuiPluginNs } from "@opencode/plugin/tui"
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { runCmduse } from "./cli"
 import { loadMeta, loadUsage } from "./sidebar/data"
@@ -146,7 +146,7 @@ export const tui = async (api: V1Api): Promise<void> => {
 // ---- v2 host ---------------------------------------------------------------
 
 function PanelV2(props: {
-	ctx: Parameters<Parameters<typeof Plugin.define>[0]["setup"]>[0]
+	ctx: TuiPluginNs.Context
 	sessionID: string
 }) {
 	const { ctx } = props
@@ -165,9 +165,9 @@ function PanelV2(props: {
 }
 
 // Plain object, not `Plugin.define` — identity function there too.
-export const commandCodeTui = {
+export const commandCodeTui: TuiPluginNs.Definition = {
 	id: ID,
-	setup(ctx: Parameters<Plugin["setup"]>[0]) {
+	setup(ctx) {
 		ctx.ui.slot({
 			append: "sidebar.content",
 			render: (input) => <PanelV2 ctx={ctx} sessionID={input.sessionID} />,

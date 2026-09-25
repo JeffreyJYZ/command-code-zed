@@ -13,18 +13,20 @@
   "build": "rm -rf dist && bun build src/index.ts --outdir dist --target bun --external @opencode-ai/plugin --external @opencode/plugin --external @opencode/plugin/tui && bun scripts/build-tui.ts && tsc -p tsconfig.build.json",
   "test": "bun test",
   "typecheck": "tsc --noEmit",
-  "build:tui": "bun scripts/build-tui.ts"
+  "build:tui": "bun scripts/build-tui.ts",
+  "extract:catalog": "bun scripts/extract-catalog.ts"
  },
  "dependencies": {
-  "@opencode-ai/plugin": "*",
-  "@opencode/plugin": "^2.0.11",
   "@opentui/core": "^0.5.4",
   "@opentui/solid": "^0.5.4",
-  "solid-js": "1.9.12"
+  "solid-js": "1.9.12",
+  "zod": "4.1.8"
  },
  "devDependencies": {
   "@types/bun": "latest",
-  "typescript": "^5"
+  "typescript": "^5",
+  "@opencode-ai/plugin": "*",
+  "@opencode/plugin": "^2.0.11"
  },
  "files": [
   "dist",

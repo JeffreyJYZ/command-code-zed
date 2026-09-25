@@ -96,18 +96,21 @@ While a session uses a `command-code*` model, the session sidebar grows a **Comm
 section (toggle with `ctrl+x b`):
 
 - plan, price and monthly credits used
-- 5-hour and weekly windows: used / cap, percent, reset countdown
+- 5-hour and weekly windows: used / cap, percent used and elapsed, reset countdown
 - this period's requests and spend
 - the active model: tier, monthly allowance, $/M rates (in/out, cache read), Intelligence, Tok/s
   (new in 0.2.5)
 - the active model's own period usage — requests, plus spend when the harness records it
-  (new in 0.2.9)
+  (new in 0.2.9; labelled `Usage (this model)`)
 
 Usage comes from the `cmduse` CLI (polled every 30s); the model catalog comes from `mpc --json`,
 cached for 6h — install it with `bun link` in the sibling `oc-cmd-compare` checkout, or the section
 simply omits those rows. The model's own usage is read from opencode's message store
 (`~/.local/share/opencode/opencode.db`, read-only); CommandCode is subscription-billed, so its
 rows show requests only. Non-CommandCode models show nothing.
+
+opencode is told each model's published $/1M rates, so its own cost display (and any accounting
+built on it) works for CommandCode models instead of showing $0.
 
 ## MCP server
 

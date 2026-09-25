@@ -52,9 +52,18 @@ describe("usageRows", () => {
 		expect(rows[1]).toEqual(["Monthly", "$50.56 / $70 (72%)"])
 		expect(rows[2]?.[0]).toBe("5-hour")
 		expect(rows[2]?.[1]).toContain("(8%)")
+		expect(rows[2]?.[1]).toContain("elapsed")
 		expect(rows[2]?.[1]).toContain("resets 5m")
 		expect(rows[3]?.[0]).toBe("Weekly")
 		expect(rows[4]).toEqual(["Period", "6.3K requests · $46.31"])
+	})
+	test("omits elapsed when the window has not started", () => {
+		const notStarted = {
+			...usage,
+			fiveHour: { cap: 14, used: 1, resetAt: 1_000_000_000_000 + 6 * 3600_000 },
+		}
+		const rows = usageRows(notStarted, 1_000_000_000_000)
+		expect(rows[2]?.[1]).not.toContain("elapsed")
 	})
 	test("empty input yields no rows", () => {
 		expect(usageRows(undefined)).toEqual([])
@@ -86,14 +95,14 @@ describe("modelRows", () => {
 			{ requests: 1_234, cost: 8.4 },
 		)
 		expect(rows[0]).toEqual(["Model", "DeepSeek V4.1 Flash"])
-		expect(rows[1]).toEqual(["Usage", "1.2K req · $8.40"])
+		expect(rows[1]).toEqual(["Usage (this model)", "1.2K req · $8.40"])
 	})
 	test("omits spend when the harness priced it at zero (subscription)", () => {
 		const rows = modelRows(
 			{ key: "deepseekv41flash", name: "DeepSeek V4.1 Flash" },
 			{ requests: 3_110, cost: 0 },
 		)
-		expect(rows[1]).toEqual(["Usage", "3.1K req"])
+		expect(rows[1]).toEqual(["Usage (this model)", "3.1K req"])
 	})
 	test("missing meta yields no rows", () => {
 		expect(modelRows(undefined)).toEqual([])

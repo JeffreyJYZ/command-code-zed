@@ -15,10 +15,10 @@
 // Usage rendering is NOT reimplemented here: the /cmd-usage command and the
 // cmd_usage tool both spawn the cmduse CLI (Rust cmduse-core), which owns all
 // window math and formatting (see ./cli.ts).
-import type { Plugin } from "@opencode/plugin";
+import type { Plugin as PluginNs } from "@opencode/plugin";
 import { runCmduse } from "./cli";
 import { KNOWN_MODELS } from "./gating";
-import { inputModalities } from "./modalities";
+import { inputModalities, isReasoningModel, modelCost, reasoningVariants } from "./catalog";
 import { resolveKey } from "./key";
 import { isClaude, loadModels, type CmdModel } from "./models";
 
@@ -27,6 +27,14 @@ export const PROVIDER_BASE = "https://api.commandcode.ai/provider/v1";
 /** Shared integration backing both lanes' credentials (/connect + env). */
 export const INTEGRATION_ID = "command-code";
 export const INTEGRATION_NAME = "Command Code";
+
+// The host's `ProviderDomain.transform` / `ToolDomain.transform` callbacks do
+// not infer their editor parameter through the package's re-exports, so the
+// editor types are derived from the context itself. Keeps the file free of
+// deep `@opencode/plugin/promise/*` imports (not a public subpath).
+type V2Context = PluginNs.Context;
+type ProviderEditor = Parameters<Parameters<V2Context["provider"]["transform"]>[0]>[0];
+type IntegrationEditor = Parameters<Parameters<V2Context["integration"]["transform"]>[0]>[0];
 
 type Lane = {
 	id: "command-code-anthropic" | "command-code-openai";
@@ -49,13 +57,27 @@ const LANES: Lane[] = [
 	},
 ];
 
-const TOOL_DESCRIPTION =
+export const TOOL_DESCRIPTION =
 	"Fetch live Command Code plan/usage: plan name, monthly credits, 5-hour & weekly windows, billing-period summary. Pass arg='plans' for the plan comparison table only, or extra cmduse flags (e.g. '--tz +05:30 daily').";
 
-/** API/known model → v2 Model.Info. Every Command Code model shares
- * capabilities and pricing (subscription credits, not per-token); only the
- * open lane needs the reasoning round-trip field. */
+/** opencode cost entry: $/1M rates, or [] when the catalog has none. */
+function costEntry(id: string): Array<{ input: number; output: number; cache: { read: number; write: number } }> {
+	const cost = modelCost(id)
+	return cost ? [{ input: cost.input, output: cost.output, cache: { read: cost.cacheRead, write: cost.cacheWrite } }] : []
+}
+
+/** API/known model → v2 Model.Info. Capabilities, variants and $/1M cost all
+ * come from the generated catalog (the listing API publishes none of them);
+ * only the open lane needs the reasoning round-trip field. */
 export function toV2Model(m: CmdModel, lane: Lane): unknown {
+	// Reasoning-effort variants (ctrl+t cycling) come from the generated catalog:
+	// the CLI bundle is the only source that lists per-model effort levels. v2
+	// carries the effort in the variant's `settings`, which the host projects
+	// into the model's provider options; models with no effort list stay empty.
+	const efforts = reasoningVariants(m.id);
+	const variants = efforts
+		? Object.entries(efforts).map(([id, settings]) => ({ id, settings }))
+		: [];
 	const info = {
 		id: m.id,
 		modelID: m.id,
@@ -64,9 +86,9 @@ export function toV2Model(m: CmdModel, lane: Lane): unknown {
 		// Modalities come from the generated table (the API has no capabilities);
 		// unknown models fall back to text-only.
 		capabilities: { tools: true, input: [...inputModalities(m.id)], output: ["text"] },
-		variants: [],
+		variants,
 		time: { released: 0 },
-		cost: [],
+		cost: costEntry(m.id),
 		status: "active",
 		enabled: true,
 		limit: { context: m.contextLength || 128_000, output: 32_000 },
@@ -126,13 +148,14 @@ export async function credentialKey(ctx: CredentialContext): Promise<string | un
 }
 
 /**
- * Plain object, not `Plugin.define` — that helper is the identity function,
- * so the package is only needed for types. Keeps the runtime dependency
- * surface to opencode's own rewrite list (@opentui/*, solid-js).
+ * opencode validates the plugin *by decoding* the default export against its
+ * own `Plugin` interface (identity `define` on both sides), so the package is
+ * only needed for types. Keeps the runtime dependency surface to opencode's
+ * own rewrite list (@opentui/*, solid-js).
  */
-export const commandCodeV2 = {
+export const commandCodeV2: PluginNs.Plugin = {
 	id: PLUGIN_ID,
-	async setup(ctx: Parameters<Plugin["setup"]>[0]) {
+	async setup(ctx) {
 		// Credential sources, in host order of authority:
 		//  1. the opencode connection for our integration (`/connect`, or the
 		//     env method reading CMD_API_KEY on the server process)
@@ -159,7 +182,7 @@ export const commandCodeV2 = {
 		// /connect entry + env discovery for both lanes. Methods are additive
 		// registrations on the shared integration id; the missing-record seed
 		// behaves like the provider seed.
-		await ctx.integration.transform((editor) => {
+		await ctx.integration.transform((editor: IntegrationEditor) => {
 			editor.update(INTEGRATION_ID, (integration) => {
 				if (integration.name === (integration.id as unknown as string)) {
 					integration.name = INTEGRATION_NAME;
@@ -176,7 +199,7 @@ export const commandCodeV2 = {
 		});
 
 		const seed = staticSeedModels();
-		await ctx.provider.transform((editor) => {
+		await ctx.provider.transform((editor: ProviderEditor) => {
 			for (const lane of LANES) {
 				// Missing providers seed from Provider.Info.empty(id), so `update`
 				// gap-fills exactly like v1's `??=` fills; user config wins because
@@ -199,11 +222,11 @@ export const commandCodeV2 = {
 			}
 		});
 
-		// NOTE: no server-side /cmd-usage command here — synthetic messages are
-		// model-visible but not rendered in the TUI, and a prompt-based command
-		// costs an LLM round-trip. The user-facing slash command lives in the
-		// TUI half (src/tui.ts, dist/tui.js via the package ./tui export).
-
+		// v2 tool: same cmd_usage the v1 half registers. The Promise API takes
+		// JSON Schema input and returns `{ content }`, so the agent keeps the
+		// tool on both hosts. Cast because the shared schema types declare an
+		// Effect-returning execute while the promise host awaits a plain Promise
+		// (the shape opencode-cmd-provider also ships).
 		await ctx.tool.transform((editor) => {
 			editor.add({
 				name: "cmd_usage",
@@ -219,14 +242,14 @@ export const commandCodeV2 = {
 					},
 					additionalProperties: false,
 				},
-				async execute(input) {
-					const arg = typeof (input as { arg?: unknown })?.arg === "string" ? (input as { arg: string }).arg : "";
+				async execute(input: { arg?: unknown }) {
+					const arg = typeof input?.arg === "string" ? input.arg : "";
 					const key = await credentialKey(ctx);
 					return {
 						content: await runCmduse(arg, { env: key ? { CMD_API_KEY: key } : undefined }),
 					};
 				},
-			});
+			} as never);
 		});
 
 		// Live model list: fetch + plan gating + lane split (same pipeline as
@@ -246,7 +269,7 @@ export const commandCodeV2 = {
 				if (!key) return;
 				const split = await loadModels(key);
 				if (controller.signal.aborted) return;
-				await ctx.provider.transform((editor) => {
+				await ctx.provider.transform((editor: ProviderEditor) => {
 					editor.models.set(
 						"command-code-anthropic",
 						split.claude.map((m) => toV2Model(m, LANES[0]!)) as never,

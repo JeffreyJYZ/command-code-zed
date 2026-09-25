@@ -71,12 +71,24 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
   + `cliVersion`; cli and opencode warn when the snapshot is >30d old, and
   both warn when the API returns a plan id no `plans.json` rule matches
   (the dashboard would otherwise silently show "Free" with no cap).
-- **Per-model input modalities live in `opencode/src/modalities.ts`, generated.**
-  The listing API (`/provider/v1/models`) returns no capabilities, so the only
-  source is the official CLI's own model table (`inputModalities`). Regenerate
-  with `bun scripts/extract-modalities.ts` (in `opencode/`) after a Command Code
-  release; it fetches the published bundle and stamps the version. Models absent
-  from the table are text-only, which is the safe default — never assume vision.
+- **The per-model catalog lives in `opencode/src/catalog.ts`, generated.**
+  The listing API (`/provider/v1/models`) returns no capabilities and no rates,
+  so the only source is the official CLI package: `models.md` (context, efforts,
+  $/1M in/out/cache-read, plus cache-write on Anthropic models) and `dist/cli.mjs`
+  (`inputModalities`). Regenerate with `bun scripts/extract-catalog.ts` (in
+  `opencode/`, or `bun run extract:catalog`) after a Command Code release; it
+  fetches both, stamps the version, and warns about modalities-only ids the docs
+  have not priced yet. Models absent from the table are text-only with no price —
+  never assume vision or invent a rate.
+- **The plugin halves are plain objects; `@opencode/*` is dev-only.** opencode
+  decodes the default export against its own `Plugin` interface (both `define`
+  helpers are the identity function), so `src/v2.ts` / `src/tui.tsx` export
+  `{ id, setup }` literals typed by `import type`, and `src/index.ts` defines its
+  v1 tool inline (`tool()` there is also identity) with `zod` for the args shape.
+  `@opencode/plugin` + `@opencode-ai/plugin` sit in devDependencies only: the
+  built `dist/index.js` must import nothing but node builtins, which is what keeps
+  a fresh opencode start from installing their ~270 MB graph (`@opencode/ai`,
+  `effect`, `@opentelemetry`, `@aws-sdk`) before the provider appears.
 - **Behavior vectors live in `core/conformance.json`.** Rust (`core` test)
   asserts them all. Since plugin 0.2.0 the TS port (`opencode/test/
   conformance.test.ts`) covers only the still-ported model-gating layer

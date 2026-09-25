@@ -4,6 +4,7 @@
 // the same shape cmd-provider's deals panel uses. Keeping this pure makes the
 // panel trivial to test and host-agnostic (v1 and v2 pass the same inputs).
 import { MODEL_CATEGORIES, canonicalizeModelId, type Category } from "../gating"
+import { FIVE_HOUR_SECS, WEEKLY_SECS, elapsedPct } from "./windows"
 
 export type SidebarRow = [label: string, value: string]
 
@@ -76,12 +77,23 @@ export function until(epoch: number | undefined, now = Date.now()): string {
 	return hours % 24 ? `${days}d ${hours % 24}h` : `${days}d`
 }
 
-function windowRow(label: string, w: WindowUsage | undefined, now: number): SidebarRow | undefined {
+function windowRow(
+	label: string,
+	w: WindowUsage | undefined,
+	now: number,
+	durSecs: number,
+): SidebarRow | undefined {
 	if (!w || typeof w.cap !== "number" || w.cap <= 0) return undefined
 	const used = typeof w.used === "number" ? w.used : 0
 	const pct = Math.round((used / w.cap) * 100)
+	const elapsed = elapsedPct(w.resetAt, durSecs, Math.floor(now / 1000))
 	const reset = until(w.resetAt, now)
-	return [label, `${money(used)} / ${money(w.cap)} (${pct}%)${reset ? ` · resets ${reset}` : ""}`]
+	const parts = [
+		`${money(used)} / ${money(w.cap)} (${pct}%)`,
+		...(elapsed === undefined ? [] : [`${elapsed}% elapsed`]),
+		...(reset ? [`resets ${reset}`] : []),
+	]
+	return [label, parts.join(" · ")]
 }
 
 /** Plan + rolling windows + period totals, from a cmduse snapshot. */
@@ -98,9 +110,9 @@ export function usageRows(usage: Usage | undefined, now = Date.now()): SidebarRo
 		const pct = usage.monthlyCap > 0 ? Math.round((used / usage.monthlyCap) * 100) : 0
 		rows.push(["Monthly", `${money(used)} / ${money(usage.monthlyCap)} (${pct}%)`])
 	}
-	const five = windowRow("5-hour", usage.fiveHour, now)
+	const five = windowRow("5-hour", usage.fiveHour, now, FIVE_HOUR_SECS)
 	if (five) rows.push(five)
-	const week = windowRow("Weekly", usage.weekly, now)
+	const week = windowRow("Weekly", usage.weekly, now, WEEKLY_SECS)
 	if (week) rows.push(week)
 	if (typeof usage.requests === "number" || typeof usage.cost === "number") {
 		const parts: string[] = []
@@ -120,7 +132,7 @@ export function modelRows(meta: ModelMeta | undefined, usage?: ModelUsage): Side
 		// CommandCode is subscription-billed, so opencode records cost 0 for
 		// its models: show spend only when the harness actually priced it.
 		const spent = usage.cost > 0 ? ` · ${money(usage.cost)}` : ""
-		rows.push(["Usage", `${count(usage.requests)} req${spent}`])
+		rows.push(["Usage (this model)", `${count(usage.requests)} req${spent}`])
 	}
 	if (meta.tier) rows.push(["Tier", TIER_DISPLAY[meta.tier]])
 	if (typeof meta.allowance === "number") rows.push(["Allowance", `${money(meta.allowance)}/mo`])

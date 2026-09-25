@@ -9,9 +9,9 @@ import { z } from "zod";
 import { API_BASE, whoami } from "./api";
 import { runCmduse } from "./cli";
 import { resolveKey } from "./key";
-import { supportsImage } from "./modalities";
+import { modelCost, supportsImage } from "./catalog";
 import { loadModels } from "./models";
-import { commandCodeV2, PROVIDER_BASE } from "./v2";
+import { TOOL_DESCRIPTION, commandCodeV2, PROVIDER_BASE } from "./v2";
 
 /** Runtime `tool()` in @opencode-ai/plugin is the identity function — the
  * host builds tools from plain objects, so we define ours inline and import
@@ -69,6 +69,16 @@ const MODEL_CAPABILITIES: Omit<SdkModel["capabilities"], "interleaved"> = {
 	output: { text: true, audio: false, image: false, video: false, pdf: false },
 };
 
+/** Published $/1M rates, so opencode prices a subscription provider correctly. */
+function costFor(id: string): { input: number; output: number; cache: { read: number; write: number } } {
+	const cost = modelCost(id)
+	return {
+		input: cost?.input ?? 0,
+		output: cost?.output ?? 0,
+		cache: { read: cost?.cacheRead ?? 0, write: cost?.cacheWrite ?? 0 },
+	}
+}
+
 /** Full ModelV2 shapes — the provider.models hook must return complete records. */
 function toModelDefs(
 	models: Array<{ id: string; name: string; contextLength: number }>,
@@ -93,7 +103,7 @@ function toModelDefs(
 						? { attachment: true, input: { ...MODEL_CAPABILITIES.input, image: true } }
 						: {}),
 				},
-				cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+				cost: costFor(m.id),
 				limit: { context: m.contextLength || 128_000, output: 32_000 },
 				status: "active" as const,
 				options: {},
@@ -260,8 +270,7 @@ export const CommandCodePlugin: PluginV1 = async (_input) => {
 
 		tool: {
 			cmd_usage: tool({
-				description:
-					"Fetch live Command Code plan/usage: plan name, monthly credits, 5-hour & weekly windows, billing-period summary. Pass arg=plans for the plan comparison table only.",
+				description: TOOL_DESCRIPTION,
 				args: {
 					arg: z
 						.string()

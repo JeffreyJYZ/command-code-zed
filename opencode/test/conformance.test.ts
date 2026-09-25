@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import conformance from "../../core/conformance.json";
 import { canonicalizeModelId, evaluateModelAccess } from "../src/access";
 import { bareModel } from "../src/gating";
+import { elapsedPct } from "../src/sidebar/windows";
 
 // Vectors shared verbatim with cmduse-core (conformance.json). Since 0.2.0 the
 // plugin delegates usage rendering to the cmduse CLI, so the TS port only
@@ -37,6 +38,19 @@ describe("conformance vectors (shared with cmduse-core)", () => {
 				c.plan,
 				c.unlocked,
 				c.allowed,
+			]);
+		}
+	});
+	test("elapsedPct", () => {
+		type Case = { resetAtMs: number | null; durSecs: number; now: number; out: number | null };
+		for (const c of conformance.elapsedPct as Case[]) {
+			const resetAt = c.resetAtMs === null ? undefined : c.resetAtMs;
+			const expected = c.out === null ? undefined : c.out;
+			expect([c.resetAtMs, c.durSecs, c.now, elapsedPct(resetAt, c.durSecs, c.now)]).toEqual([
+				c.resetAtMs,
+				c.durSecs,
+				c.now,
+				expected,
 			]);
 		}
 	});
