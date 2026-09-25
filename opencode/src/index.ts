@@ -12,6 +12,16 @@ import { resolveKey } from "./key";
 import { modelCost, supportsImage } from "./catalog";
 import { loadModels } from "./models";
 import { TOOL_DESCRIPTION, commandCodeV2, PROVIDER_BASE } from "./v2";
+import pkg from "../package.json";
+
+/**
+ * The runtime provider specifier opencode installs for our models: our own
+ * package at the exact version, so plugin and provider can never drift (the
+ * package cache is keyed by the specifier string and never refreshed). v1's
+ * provider loader imports this module and takes the first export whose name
+ * starts with `create` — `createCommandCode` below.
+ */
+const PROVIDER_NPM = `${pkg.name}@${pkg.version}`;
 
 /** Runtime `tool()` in @opencode-ai/plugin is the identity function — the
  * host builds tools from plain objects, so we define ours inline and import
@@ -207,20 +217,20 @@ export const CommandCodePlugin: PluginV1 = async (_input) => {
 			// lane is auth-gated (its /connect entry has no stored key headlessly).
 			// Confirm in the TUI after /connect, not via the CLI listing.
 			const claudeDefs = split
-				? toModelDefs(split.claude, "command-code-anthropic", "@ai-sdk/anthropic")
+				? toModelDefs(split.claude, "command-code-anthropic", PROVIDER_NPM)
 				: {};
 			const openDefs = split
 				? toModelDefs(
 						split.open,
 						"command-code-openai",
-						"@ai-sdk/openai-compatible",
+						PROVIDER_NPM,
 						{ field: "reasoning_content" },
 					)
 				: {};
 
 			const userAnthropic = existing("command-code-anthropic");
 			cfg.provider["command-code-anthropic"] = {
-				npm: userAnthropic.npm ?? "@ai-sdk/anthropic",
+				npm: userAnthropic.npm ?? PROVIDER_NPM,
 				name: userAnthropic.name ?? "Command Code (Anthropic)",
 				options: { baseURL: PROVIDER_BASE, ...userAnthropic.options },
 				models: { ...claudeDefs, ...userAnthropic.models },
@@ -236,7 +246,7 @@ export const CommandCodePlugin: PluginV1 = async (_input) => {
 			// hook); until then the open lane requires cmd login or options.apiKey.
 			const userOpenai = existing("command-code-openai");
 			cfg.provider["command-code-openai"] = {
-				npm: userOpenai.npm ?? "@ai-sdk/openai-compatible",
+				npm: userOpenai.npm ?? PROVIDER_NPM,
 				name: userOpenai.name ?? "Command Code (OpenAI)",
 				options: {
 					baseURL: PROVIDER_BASE,
@@ -264,7 +274,7 @@ export const CommandCodePlugin: PluginV1 = async (_input) => {
 					return a?.type === "api" && a.key ? { key: a.key } : undefined;
 				});
 				const split = await loadModels(key);
-				return toModelDefs(split.claude, "command-code-anthropic", "@ai-sdk/anthropic");
+				return toModelDefs(split.claude, "command-code-anthropic", PROVIDER_NPM);
 			},
 		},
 
@@ -287,6 +297,8 @@ export const CommandCodePlugin: PluginV1 = async (_input) => {
 		},
 	};
 };
+
+export { createCommandCode } from "./provider";
 
 export default {
 	...commandCodeV2,

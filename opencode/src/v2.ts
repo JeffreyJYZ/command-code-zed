@@ -19,6 +19,7 @@ import type { Plugin as PluginNs } from "@opencode/plugin";
 import { runCmduse } from "./cli";
 import { KNOWN_MODELS } from "./gating";
 import { inputModalities, isReasoningModel, modelCost, reasoningVariants } from "./catalog";
+import { createCommandCode } from "./provider";
 import { resolveKey } from "./key";
 import { isClaude, loadModels, type CmdModel } from "./models";
 
@@ -197,6 +198,29 @@ export const commandCodeV2: PluginNs.Plugin = {
 				method: { type: "key", label: "Command Code API key" },
 			});
 		});
+
+		// Hand the host our own AI SDK provider for both lanes: streaming, image
+		// parts and error surfacing are ours instead of opencode's internal
+		// `@opencode/ai/providers/*`. The hook fires per model with the merged
+		// settings (apiKey, baseURL) the host resolved for the connection.
+		const images = (modelId: string) => inputModalities(modelId).includes("image");
+		for (const lane of LANES) {
+			await ctx.aisdk.hook(
+				"sdk",
+				(event) => {
+					const options = event.options ?? {};
+					event.sdk = createCommandCode(
+						{
+							apiKey: typeof options.apiKey === "string" ? options.apiKey : undefined,
+							baseURL: typeof options.baseURL === "string" ? options.baseURL : PROVIDER_BASE,
+							headers: options.headers as Record<string, string> | undefined,
+						},
+						images,
+					);
+				},
+				{ providerID: lane.id as never },
+			);
+		}
 
 		const seed = staticSeedModels();
 		await ctx.provider.transform((editor: ProviderEditor) => {

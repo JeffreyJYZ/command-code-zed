@@ -200,8 +200,16 @@ nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
   provider appears. It also takes context/efforts/$-rates from the same generated
   catalog (opencode prices CommandCode models now), adds effort variants on v2,
   and shows percent elapsed on the sidebar's windows. 0.2.10 was never published
-  (0.2.9 → 0.2.11). 0.2.4 is burned: its tarball never landed, so it is
-  deprecated and skipped.
+  (0.2.9 → 0.2.11). 0.3.0 owns the streaming instead of borrowing opencode's
+  provider packages: `src/provider/` is an AI SDK v3 LanguageModel over
+  `/provider/v1/{messages,chat/completions}` (pure `wire.ts` conversion + a
+  `stream.ts` state machine), handed to v2 via `ctx.aisdk.hook("sdk", …)` and to
+  v1 by pointing `npm` at our own package pinned to its exact version (v1's
+  loader imports the module and takes the first `create*` export —
+  `createCommandCode`). Not yet ported from the reference implementation: retry
+  ladders, `pause_turn` continuation, and the legacy `/alpha/generate` fallback
+  Go accounts need when the provider API plan-gates them. 0.2.4 is burned: its
+  tarball never landed, so it is deprecated and skipped.
 - **npm publish is interactive: it fails from the agent shell** (`EOTP`, prints
   an auth URL). Build first (`cd opencode && bun run build`) so `dist/` is
   current, then the user runs plain `npm publish` themselves — it opens a
