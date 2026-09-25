@@ -15,7 +15,7 @@
 // Usage rendering is NOT reimplemented here: the /cmd-usage command and the
 // cmd_usage tool both spawn the cmduse CLI (Rust cmduse-core), which owns all
 // window math and formatting (see ./cli.ts).
-import { Plugin } from "@opencode/plugin";
+import type { Plugin } from "@opencode/plugin";
 import { runCmduse } from "./cli";
 import { KNOWN_MODELS } from "./gating";
 import { inputModalities } from "./modalities";
@@ -125,9 +125,14 @@ export async function credentialKey(ctx: CredentialContext): Promise<string | un
 	}
 }
 
-export const commandCodeV2 = Plugin.define({
+/**
+ * Plain object, not `Plugin.define` — that helper is the identity function,
+ * so the package is only needed for types. Keeps the runtime dependency
+ * surface to opencode's own rewrite list (@opentui/*, solid-js).
+ */
+export const commandCodeV2 = {
 	id: PLUGIN_ID,
-	async setup(ctx) {
+	async setup(ctx: Parameters<Plugin["setup"]>[0]) {
 		// Credential sources, in host order of authority:
 		//  1. the opencode connection for our integration (`/connect`, or the
 		//     env method reading CMD_API_KEY on the server process)
@@ -266,4 +271,4 @@ export const commandCodeV2 = Plugin.define({
 			clearInterval(timer);
 		};
 	},
-});
+};

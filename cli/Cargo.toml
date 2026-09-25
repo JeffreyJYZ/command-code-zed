@@ -2,6 +2,9 @@
 name = "cmd-usage"
 version = "0.6.12"
 edition = "2021"
+# Two bins (`cmduse` + the `cmdusedev` twin), so `cargo run -p cmd-usage` needs
+# an explicit default: CI's `-V` smoke test, and humans typing it.
+default-run = "cmduse"
 description = "Live Command Code (commandcode.ai) usage dashboard: credits, 5-hour and weekly windows, plan limits. Watch mode or one-shot."
 license = "MIT"
 repository = "https://github.com/JeffreyJYZ/command-code-zed"

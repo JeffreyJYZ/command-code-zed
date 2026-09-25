@@ -5,13 +5,29 @@
 // hooks. Both share ./cli.ts: usage rendering is delegated to the cmduse CLI
 // (Rust cmduse-core) rather than reimplemented in TS.
 import type { Plugin as PluginV1 } from "@opencode-ai/plugin";
-import { tool } from "@opencode-ai/plugin";
+import { z } from "zod";
 import { API_BASE, whoami } from "./api";
 import { runCmduse } from "./cli";
 import { resolveKey } from "./key";
 import { supportsImage } from "./modalities";
 import { loadModels } from "./models";
 import { commandCodeV2, PROVIDER_BASE } from "./v2";
+
+/** Runtime `tool()` in @opencode-ai/plugin is the identity function — the
+ * host builds tools from plain objects, so we define ours inline and import
+ * only types from the plugin package. `zod` (a real schema) stays, since the
+ * host reads `args` to build the tool's input shape. */
+function tool<Args extends z.ZodRawShape>(input: {
+	description: string;
+	args: Args;
+	execute: (args: { arg?: string }) => Promise<string>;
+}): {
+	description: string;
+	args: Args;
+	execute: (args: { arg?: string }) => Promise<string>;
+} {
+	return input;
+}
 
 type SdkModel = {
 	id: string;
@@ -247,7 +263,7 @@ export const CommandCodePlugin: PluginV1 = async (_input) => {
 				description:
 					"Fetch live Command Code plan/usage: plan name, monthly credits, 5-hour & weekly windows, billing-period summary. Pass arg=plans for the plan comparison table only.",
 				args: {
-					arg: tool.schema
+					arg: z
 						.string()
 						.optional()
 						.describe("Optional: 'plans' for the plan table only, or extra cmduse flags"),
