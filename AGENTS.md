@@ -192,9 +192,16 @@ nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
   API has no per-model dimension. Spend is shown only when the harness priced
   it — CommandCode is subscription-billed, so opencode records cost 0 there.
   0.2.10 fixed every model advertising as text-only: capabilities now come from
-  the generated `modalities.ts` (0.2.9 and earlier hardcoded `attachment: false`
+  the generated `catalog.ts` (0.2.9 and earlier hardcoded `attachment: false`
   + `input.image: false`, so no image could be attached even to `*-vision-*`).
-  0.2.4 is burned: its tarball never landed, so it is deprecated and skipped.
+  0.2.11 dropped the `@opencode/*` runtime deps — the halves are plain objects
+  and type-only imports, so a fresh start no longer installs @opencode/plugin's
+  ~511 MB graph (@opencode/ai, effect, @opentelemetry, @aws-sdk) before the
+  provider appears. It also takes context/efforts/$-rates from the same generated
+  catalog (opencode prices CommandCode models now), adds effort variants on v2,
+  and shows percent elapsed on the sidebar's windows. 0.2.10 was never published
+  (0.2.9 → 0.2.11). 0.2.4 is burned: its tarball never landed, so it is
+  deprecated and skipped.
 - **npm publish is interactive: it fails from the agent shell** (`EOTP`, prints
   an auth URL). Build first (`cd opencode && bun run build`) so `dist/` is
   current, then the user runs plain `npm publish` themselves — it opens a
