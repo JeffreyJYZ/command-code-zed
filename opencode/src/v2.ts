@@ -242,8 +242,11 @@ export const commandCodeV2: PluginNs.Plugin = {
 					},
 					additionalProperties: false,
 				},
-				async execute(input: { arg?: unknown }) {
-					const arg = typeof input?.arg === "string" ? input.arg : "";
+				async execute(input: unknown) {
+					const arg =
+						typeof (input as { arg?: unknown })?.arg === "string"
+							? (input as { arg: string }).arg
+							: "";
 					const key = await credentialKey(ctx);
 					return {
 						content: await runCmduse(arg, { env: key ? { CMD_API_KEY: key } : undefined }),
