@@ -79,7 +79,12 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
   `opencode/`, or `bun run extract:catalog`) after a Command Code release; it
   fetches both, stamps the version, and warns about modalities-only ids the docs
   have not priced yet. Models absent from the table are text-only with no price —
-  never assume vision or invent a rate.
+  never assume vision or invent a rate. Two catalogue notes: 1.65 inverted the
+  modality default, so a model accepts images unless it is in the bundle's `Rr`
+  text-only denylist — the generator reads that set (explicit per-model records
+  still win) and mirrors the CLI's own `supportsVision`; and the same models.md
+  carries the `Min plan` column, which `plans.md` names as the access rule and
+  which the sidebar reports as its `Min plan` row.
 - **The plugin halves are plain objects; `@opencode/*` is dev-only.** opencode
   decodes the default export against its own `Plugin` interface (both `define`
   helpers are the identity function), so `src/v2.ts` / `src/tui.tsx` export
@@ -249,7 +254,12 @@ nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
   published bundle or a newer CLI), and a README tip to pin the plugin specifier
   so opencode stops re-resolving `@latest` on every start.
   0.2.4 is burned: its
-  tarball never landed, so it is deprecated and skipped.
+  tarball never landed, so it is deprecated and skipped. 0.3.2 added the min-plan
+  row, CLI-accurate vision, a readable startup log and the CDN fallbacks; 0.3.3
+  cached the live list to disk so a warm start never waits on the listing API;
+  0.3.4 stopped the refresh from transforming after paint at all — the ungated
+  fallback list swings in size with network luck, which defeated the id-diff and
+  made every start look changed.
 - **npm publish is interactive: it fails from the agent shell** (`EOTP`, prints
   an auth URL). Build first (`cd opencode && bun run build`) so `dist/` is
   current, then the user runs plain `npm publish` themselves — it opens a

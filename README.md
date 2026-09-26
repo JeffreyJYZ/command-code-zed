@@ -117,7 +117,7 @@ built on it) works for CommandCode models instead of showing $0.
 For the fastest startup, pin the plugin to an exact version in `opencode.json`:
 
 ```json
-{ "plugins": ["@jeffreyjyz/opencode-command-code@0.3.1"] }
+{ "plugins": ["@jeffreyjyz/opencode-command-code@0.3.4"] }
 ```
 
 A bare name makes opencode re-resolve `@latest` (a registry round-trip) on every start; a pinned

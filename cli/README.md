@@ -65,8 +65,10 @@ cmduse daily --csv           # CSV output for daily/hourly/model/session
 ```
 
 Color: SGR escapes are suppressed when stdout is not a terminal or when
-`NO_COLOR` is set non-empty. `--plain` forces plain text; reports have no
-`--plain` — pipe them or use `--json`/`--csv`.
+`NO_COLOR` is set non-empty. The live dashboard's spinner goes straight to
+/dev/tty, so it only runs when stdout is a terminal — `--plain`, or any piped
+or redirected run, never writes to the terminal at all. `--plain` forces plain
+text; reports have no `--plain` — pipe them or use `--json`/`--csv`.
 
 ## MCP server
 
