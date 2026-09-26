@@ -247,6 +247,11 @@ nothing about CI. Mirror CI before committing: `cargo fmt --all -- --check`,
   current, then the user runs plain `npm publish` themselves — it opens a
   browser to authenticate, no `--otp` needed. Never treat an `EOTP` failure as
   published — verify with `npm view @jeffreyjyz/opencode-command-code version`.
+- **Verify a release with `bun scripts/verify-release.ts <version> [--expected <sha1>]`.**
+  It polls the packument and the tarball, reports `latest` / version / tarball
+  status in one line, and (given a local `npm pack` shasum) fails on a mismatch
+  or a tarball that disagrees about its version. Keep it in the release loop
+  rather than eyeballing the registry.
 - **A successful publish is asynchronous, in two visible stages.** The CLI
   returns `PUT 202` ("Your package is being processed") and exit 0 immediately,
   but the registry updates the **packument** (so `dist-tags.latest` and
