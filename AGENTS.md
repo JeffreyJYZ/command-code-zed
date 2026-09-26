@@ -89,6 +89,14 @@ opencode/          @jeffreyjyz/opencode-command-code TS plugin (dual opencode
   built `dist/index.js` must import nothing but node builtins, which is what keeps
   a fresh opencode start from installing their ~270 MB graph (`@opencode/ai`,
   `effect`, `@opentelemetry`, `@aws-sdk`) before the provider appears.
+- **The picker must never wait on the live list.** Two traps found the hard way:
+  (1) `loadModels` falls back to "show everything" when the billing API is
+  unreachable, and that ungated list swings between ~61 and ~82 ids with network
+  luck — so an id-diff check sees a change on every start and fires a transform
+  anyway. `ModelSplit.gated` now marks that fallback and v2 ignores such a list
+  entirely (no cache write, no transform). (2) Even a legitimately changed list
+  must not transform on the first pass after start: the first deferred refresh
+  warms the cache only, and 30-minute ticks may update the registry.
 - **The live model list is cached to `$XDG_CACHE_HOME/command-code/models.json`.** A
   warm start merges it during registration, so the picker is fresh at ~1ms and
   the background refresh usually finds nothing to change. The refresh only calls

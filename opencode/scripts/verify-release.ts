@@ -48,15 +48,53 @@ export function sha1Hex(bytes: ArrayBuffer | Uint8Array): string {
 	return createHash("sha1").update(new Uint8Array(bytes as ArrayBuffer)).digest("hex")
 }
 
+/** The version in this package's own manifest — the one you just published. */
+export function localVersion(manifest: { version?: string }): string | undefined {
+	return typeof manifest.version === "string" ? manifest.version : undefined
+}
+
+/** `npm pack` the package in `dir` and return the tarball's sha1. */
+async function packLocalShasum(dir: string): Promise<string | undefined> {
+	const { mkdtemp } = await import("node:fs/promises")
+	const { tmpdir } = await import("node:os")
+	const { join } = await import("node:path")
+	const dest = await mkdtemp(join(tmpdir(), "verify-pack-"))
+	const proc = Bun.spawnSync(["npm", "pack", "--pack-destination", dest], { cwd: dir, stdout: "pipe", stderr: "pipe" })
+	if (proc.exitCode !== 0) {
+		console.error(`npm pack failed: ${proc.stderr.toString().trim().split("\n").pop() ?? ""}`)
+		return undefined
+	}
+	const name = proc.stdout.toString().trim().split("\n").pop() ?? ""
+	const file = join(dest, name)
+	return sha1Hex(await Bun.file(file).arrayBuffer())
+}
+
 async function main(): Promise<number> {
 	const args = process.argv.slice(2)
-	const version = args.find((a) => !a.startsWith("--"))
+	const pkgDir = new URL("..", import.meta.url).pathname
+	const manifest = (await Bun.file(new URL("../package.json", import.meta.url)).json()) as { version?: string }
+	// Flags that take a value must not have it mistaken for the version.
+	const valueFlags = new Set(["--expected", "--tries"])
+	let explicitVersion: string | undefined
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i]!
+		if (valueFlags.has(arg)) {
+			i++
+			continue
+		}
+		if (!arg.startsWith("--")) explicitVersion = arg
+	}
+	const version = explicitVersion ?? localVersion(manifest)
 	if (!version) {
-		console.error("usage: bun scripts/verify-release.ts <version> [--expected <sha1>] [--tries N]")
+		console.error("usage: bun scripts/verify-release.ts [version] [--expected <sha1>] [--tries N] [--no-pack]")
 		return 2
 	}
+	if (!explicitVersion) console.log(`no version given; using package.json (${version})`)
 	const expectedIndex = args.indexOf("--expected")
-	const expected = expectedIndex >= 0 ? args[expectedIndex + 1] : undefined
+	const suppliedExpected = expectedIndex >= 0 ? args[expectedIndex + 1] : undefined
+	// Default: pack this checkout and compare — the publish-time shasum, no copy-paste.
+	const expected = suppliedExpected ?? (args.includes("--no-pack") ? undefined : await packLocalShasum(pkgDir))
+	if (expected) console.log(`expected sha1: ${expected}${suppliedExpected ? " (supplied)" : " (local npm pack)"}`)
 	const triesIndex = args.indexOf("--tries")
 	const tries = triesIndex >= 0 ? Number(args[triesIndex + 1] ?? 40) : 40
 

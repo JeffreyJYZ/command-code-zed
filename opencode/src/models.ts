@@ -7,6 +7,10 @@ export type CmdModel = { id: string; name: string; contextLength: number };
 export type ModelSplit = {
 	claude: CmdModel[];
 	open: CmdModel[];
+	/** True when the billing lookup succeeded and the plan gate really ran. A
+	 * false here means "show everything", which is the API-enforced fallback —
+	 * callers must not treat that as a new model list. */
+	gated: boolean;
 };
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -60,6 +64,7 @@ export async function loadModels(key: string): Promise<ModelSplit> {
 	}
 
 	let plan: PlanLike = { planId: "", purchasedCredits: 0, freeCredits: 0 };
+	let gated = true;
 	try {
 		const [sub, cr] = await Promise.all([subscriptions(key), credits(key)]);
 		plan = {
@@ -68,9 +73,13 @@ export async function loadModels(key: string): Promise<ModelSplit> {
 			freeCredits: cr.credits.freeCredits ?? 0,
 		};
 	} catch {
-		// gating needs billing API; if unreachable, show everything (API enforces real limits)
+		// Gating needs the billing API. Unreachable → show everything (the API
+		// enforces the real limits), but flag it: the ungated list is a superset
+		// whose size swings with network luck, and callers must not mistake that
+		// for "upstream added models".
+		gated = false;
 	}
 	const allowed = models.filter((m) => evaluateModelAccess(m.id, plan).allowed);
 	const { claude, open } = splitModels(allowed);
-	return { claude, open };
+	return { claude, open, gated };
 }

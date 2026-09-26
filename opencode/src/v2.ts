@@ -341,6 +341,8 @@ export const commandCodeV2: PluginNs.Plugin = {
 		// from a repeat of the same list (ids only — that is what a picker shows).
 		let appliedClaude = cached?.claude ?? [];
 		let appliedOpen = cached?.open ?? [];
+		// Flipped after the first deferred pass: startup must not transform.
+		let canTransform = false;
 		const logTimings = (refreshMs: number, modelCount: number) =>
 			void writeStartupLine(
 				setupTimingLine({
@@ -360,12 +362,19 @@ export const commandCodeV2: PluginNs.Plugin = {
 				if (!key) return;
 				const split = await loadModels(key);
 				if (controller.signal.aborted) return;
-				void writeModelsCache({ fetchedAt: Date.now(), claude: split.claude, open: split.open });
 				const modelCount = split.claude.length + split.open.length;
-				// Only touch the registry when the ids actually change: every transform
-				// is a state edit the host re-applies and re-publishes, and one landing
-				// while the TUI paints read as "the UI waited for the fetch".
-				if (!idsDiffer(split.claude, appliedClaude) && !idsDiffer(split.open, appliedOpen)) {
+				// Only a gated list is worth caching or applying: the ungated fallback
+				// is "everything", and its size swings with network luck.
+				if (!split.gated) {
+					logTimings(Date.now() - refreshStart, modelCount);
+					return;
+				}
+				void writeModelsCache({ fetchedAt: Date.now(), claude: split.claude, open: split.open });
+				// Never transform on the first (deferred) pass: it is there to warm the
+				// cache, and a transform landing right after start makes the host
+				// re-publish provider/model state while the TUI paints. Later ticks may
+				// update the registry, and only when the ids actually change.
+				if (!canTransform || (!idsDiffer(split.claude, appliedClaude) && !idsDiffer(split.open, appliedOpen))) {
 					logTimings(Date.now() - refreshStart, modelCount);
 					return;
 				}
@@ -388,6 +397,8 @@ export const commandCodeV2: PluginNs.Plugin = {
 				console.warn("[command-code] live model list unavailable, keeping the snapshot:", e);
 			} finally {
 				refreshing = false;
+				// After the first pass, later ticks (30 min) may update the registry.
+				canTransform = true;
 			}
 		};
 		// Land the first refresh after the startup paint: a transform at +2.5s
